@@ -1,0 +1,17 @@
+/server/node_modules
+
+/model/model
+/model/outputs
+/model/SFT_data
+
+/database/finish_file
+/database/medlive_chunks
+/database/medlive_data
+/database/origin_file
+/database/processed_pdf
+/database/processed_txt
+/database/wiki_diabetes
+/database/embeddings
+
+.vscode/*
+.claude/*
