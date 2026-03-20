@@ -228,29 +228,30 @@ def main():
 if __name__ == "__main__":
     main()
 
+'''
+---------------------------------------------------------------------------
+使用示例
+---------------------------------------------------------------------------
+1. 内置测试样例（默认）
+   python test_qwen25_rag_lora.py --bf16
 
-# ---------------------------------------------------------------------------
-# 使用示例
-# ---------------------------------------------------------------------------
-# 1. 内置测试样例（默认）
-#    python test_qwen25_rag_lora.py --bf16
-#
-# 2. 显存不足时使用 4bit 量化
-#    python test_qwen25_rag_lora.py --use_4bit --bf16
-#
-# 3. 交互式问答
-#    python test_qwen25_rag_lora.py --mode interactive --bf16
-#
-# 4. 单条测试（无上下文）
-#    python test_qwen25_rag_lora.py --mode single \
-#        --question "高血压有哪些并发症？" --bf16
-#
-# 5. 单条测试（带检索上下文）
-#    python test_qwen25_rag_lora.py --mode single \
-#        --question "如何调整降压方案？" \
-#        --context "单药未达标时可联合用药..." --bf16
-#
-# 6. 批量测试 jsonl 文件并保存结果
-#    python test_qwen25_rag_lora.py \
-#        --test_file SFT_data/three_high_subset/merged_three_high_qa.dedup.jsonl \
-#        --output_file outputs/test_predictions.jsonl --bf16
+2. 显存不足时使用 4bit 量化
+   python test_qwen25_rag_lora.py --use_4bit --bf16
+
+3. 交互式问答
+   python test_qwen25_rag_lora.py --mode interactive --bf16
+
+4. 单条测试（无上下文）
+   python test_qwen25_rag_lora.py --mode single \
+       --question "高血压有哪些并发症？" --bf16
+
+5. 单条测试（带检索上下文）
+   python test_qwen25_rag_lora.py --mode single \
+       --question "如何调整降压方案？" \
+       --context "单药未达标时可联合用药..." --bf16
+
+6. 批量测试 jsonl 文件并保存结果
+   python test_qwen25_rag_lora.py \
+       --test_file SFT_data/three_high_subset/merged_three_high_qa.dedup.jsonl \
+       --output_file outputs/test_predictions.jsonl --bf16
+'''
