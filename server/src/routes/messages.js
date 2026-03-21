@@ -1,6 +1,11 @@
 import { Router } from "express";
 import jwt from "jsonwebtoken";
-import pool from "../db.js";
+import {
+  createMessage,
+  ensureConversationAccessible,
+  listMessagesByConversation,
+  patchMessage,
+} from "../services/messageService.js";
 
 const router = Router();
 
@@ -34,29 +39,9 @@ router.get("/:id/messages", async (req, res, next) => {
       return res.status(400).json({ error: "invalid conversation id" });
     }
 
-    const conversationResult = await pool.query(
-      `
-      SELECT id
-      FROM conversations
-      WHERE id = $1 AND user_id = $2 AND is_deleted = FALSE
-      `,
-      [conversationId, userId]
-    );
-    if (!conversationResult.rows[0]) {
-      return res.status(404).json({ error: "conversation not found" });
-    }
-
-    const result = await pool.query(
-      `
-      SELECT id, conversation_id, role, content, tokens, created_at
-      FROM messages
-      WHERE conversation_id = $1
-      ORDER BY created_at ASC, id ASC
-      `,
-      [conversationId]
-    );
-
-    res.json(result.rows);
+    await ensureConversationAccessible(conversationId, userId);
+    const messages = await listMessagesByConversation(conversationId);
+    res.json(messages);
   } catch (err) {
     next(err);
   }
@@ -76,28 +61,40 @@ router.post("/:id/messages", async (req, res, next) => {
       return res.status(400).json({ error: "role and content are required" });
     }
 
-    const conversationResult = await pool.query(
-      `
-      SELECT id
-      FROM conversations
-      WHERE id = $1 AND user_id = $2 AND is_deleted = FALSE
-      `,
-      [conversationId, userId]
-    );
-    if (!conversationResult.rows[0]) {
-      return res.status(404).json({ error: "conversation not found" });
+    await ensureConversationAccessible(conversationId, userId);
+    const createdMessage = await createMessage({ conversationId, role, content, tokens });
+    res.status(201).json(createdMessage);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/conversations/:id/messages/:messageId
+// Typical usage: create message first, then patch tokenizer-based tokens from model usage.
+router.patch("/:id/messages/:messageId", async (req, res, next) => {
+  try {
+    const userId = getUserIdFromAuthHeader(req);
+    const conversationId = Number(req.params.id);
+    const messageId = Number(req.params.messageId);
+    const { tokens, content } = req.body || {};
+
+    if (!Number.isInteger(conversationId)) {
+      return res.status(400).json({ error: "invalid conversation id" });
+    }
+    if (!Number.isInteger(messageId)) {
+      return res.status(400).json({ error: "invalid message id" });
     }
 
-    const insertResult = await pool.query(
-      `
-      INSERT INTO messages (conversation_id, role, content, tokens)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, conversation_id, role, content, tokens, created_at
-      `,
-      [conversationId, role, content, tokens ?? null]
-    );
+    if (tokens !== undefined && (!Number.isInteger(tokens) || tokens < 0)) {
+      return res.status(400).json({ error: "tokens must be a non-negative integer" });
+    }
+    if (tokens === undefined && content === undefined) {
+      return res.status(400).json({ error: "at least one of tokens or content is required" });
+    }
 
-    res.status(201).json(insertResult.rows[0]);
+    await ensureConversationAccessible(conversationId, userId);
+    const updatedMessage = await patchMessage({ conversationId, messageId, content, tokens });
+    res.json(updatedMessage);
   } catch (err) {
     next(err);
   }

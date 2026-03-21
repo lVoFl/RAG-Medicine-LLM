@@ -1,6 +1,8 @@
 import { Router } from "express";
 import jwt from "jsonwebtoken";
 import { generateWithLocalModel } from "../services/modelClient.js";
+import { runConversationWorkflow } from "../services/chatWorkflowService.js";
+import pool from "../db.js"
 
 const router = Router();
 
@@ -52,11 +54,72 @@ router.post("/generate", async (req, res, next) => {
       topP,
     });
 
+    const usage =
+      result.usage && typeof result.usage === "object"
+        ? {
+            ...result.usage,
+            total_tokens:
+              Number(result.usage.prompt_tokens || 0) + Number(result.usage.completion_tokens || 0),
+          }
+        : null;
+
     res.json({
       answer: result.answer,
-      usage: result.usage || null,
+      usage,
       params: result.params || null,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/model/conversations/:id/generate
+// Workflow: check conversation -> insert user message -> call local LLM -> insert assistant message -> return response.
+router.post("/conversations/:id/generate", async (req, res, next) => {
+  try {
+    const userId = getUserIdFromAuthHeader(req);
+    const conversationId = Number(req.params.id);
+    if (!Number.isInteger(conversationId)) {
+      return res.status(400).json({ error: "invalid conversation id" });
+    }
+
+    const {
+      question,
+      context,
+      system_prompt: systemPrompt,
+      max_new_tokens: maxNewTokens,
+      temperature,
+      top_p: topP,
+    } = req.body || {};
+
+    const normalizedQuestion = String(question || "").trim();
+    if (!normalizedQuestion) {
+      return res.status(400).json({ error: "question is required" });
+    }
+
+    const result = await runConversationWorkflow({
+      userId,
+      conversationId,
+      question: normalizedQuestion,
+      context: context == null ? undefined : String(context),
+      systemPrompt: systemPrompt == null ? undefined : String(systemPrompt),
+      maxNewTokens,
+      temperature,
+      topP,
+    });
+    console.log(result);
+    const updateResult = await pool.query(
+      `
+      UPDATE conversations
+      SET
+        last_message = COALESCE($1::jsonb, last_message)
+      WHERE id = $2 AND user_id = $3 AND is_deleted = FALSE
+      RETURNING id
+      `,
+      [result.assistant_message.content, conversationId, userId]
+    );
+    res.status(201).json(result);
+    
   } catch (err) {
     next(err);
   }
