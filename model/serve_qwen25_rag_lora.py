@@ -2,11 +2,12 @@
 部署脚本：使用 Flask 启动本地推理服务，供 Node.js server 调用。
 
 启动示例：
-python serve_qwen25_rag_lora.py --base_model model --lora_path outputs/qwen25_rag_lora --bf16 --port 8001
+python serve_qwen25_rag_lora.py --base_model model/qwen2.5-1.7B --use_4bit --port 8001
 """
 
 import argparse
 import threading
+from pathlib import Path
 from typing import Optional
 
 import torch
@@ -16,12 +17,17 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 
 DEFAULT_SYSTEM_PROMPT = "你是一个严谨的医疗助手，请基于提供的检索资料回答问题。若资料不足，明确说明不确定。"
+SCRIPT_DIR = Path(__file__).resolve().parent
+DEFAULT_BASE_MODEL = str(SCRIPT_DIR / "qwen2.5-1.7B")
+DEFAULT_LORA_PATH = str(SCRIPT_DIR / "outputs" / "qwen25_rag_lora")
 
 
 class ModelRuntime:
     def __init__(self, args: argparse.Namespace):
         self.args = args
         self.lock = threading.Lock()
+        self.device = "cuda" if torch.cuda.is_available() and not args.cpu else "cpu"
+        print(f"Detected device: {self.device}")
 
         print(f"[1/2] Loading tokenizer from: {args.base_model}")
         self.tokenizer = AutoTokenizer.from_pretrained(args.base_model, trust_remote_code=True)
@@ -30,25 +36,32 @@ class ModelRuntime:
         self.tokenizer.padding_side = "left"
 
         quantization_config = None
-        if args.use_4bit:
+        if args.use_4bit and self.device == "cuda":
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type="nf4",
                 bnb_4bit_compute_dtype=torch.bfloat16 if args.bf16 else torch.float16,
                 bnb_4bit_use_double_quant=True,
             )
+        elif args.use_4bit and self.device != "cuda":
+            print("Warning: --use_4bit requires CUDA. Falling back to non-quantized loading on CPU.")
 
-        dtype = torch.bfloat16 if args.bf16 else torch.float16
+        dtype = torch.float32 if self.device == "cpu" else (torch.bfloat16 if args.bf16 else torch.float16)
 
-        print(f"[2/2] Loading base model and LoRA adapter from: {args.lora_path}")
+        print("[2/2] Loading base model")
         base_model = AutoModelForCausalLM.from_pretrained(
             args.base_model,
             trust_remote_code=True,
             quantization_config=quantization_config,
-            torch_dtype=dtype if not args.use_4bit else None,
-            device_map="auto",
+            torch_dtype=dtype if quantization_config is None else None,
+            device_map="auto" if self.device == "cuda" else "cpu",
         )
-        self.model = PeftModel.from_pretrained(base_model, args.lora_path)
+        if args.lora_path:
+            print(f"Loading LoRA adapter from: {args.lora_path}")
+            self.model = PeftModel.from_pretrained(base_model, args.lora_path)
+        else:
+            print("No LoRA adapter provided. Serving base model only.")
+            self.model = base_model
         self.model.eval()
         print("Model runtime is ready.")
 
@@ -79,7 +92,7 @@ class ModelRuntime:
         gen_top_p = float(self.args.top_p if top_p is None else top_p)
 
         with self.lock:
-            inputs = self.tokenizer(prompt, return_tensors="pt", add_special_tokens=False).to(self.model.device)
+            inputs = self.tokenizer(prompt, return_tensors="pt", add_special_tokens=False).to(self.device)
             output_ids = self.model.generate(
                 **inputs,
                 max_new_tokens=gen_max_new_tokens,
@@ -111,15 +124,24 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Serve Qwen2.5 RAG-LoRA model via Flask")
     parser.add_argument("--host", type=str, default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8001)
-    parser.add_argument("--base_model", type=str, default="model", help="Base model path")
-    parser.add_argument("--lora_path", type=str, default="outputs/qwen25_rag_lora", help="LoRA adapter path")
+    parser.add_argument("--base_model", type=str, default=DEFAULT_BASE_MODEL, help="Base model path")
+    parser.add_argument("--lora_path", type=str, default=None, help="LoRA adapter path, optional")
     parser.add_argument("--system_prompt", type=str, default=DEFAULT_SYSTEM_PROMPT)
     parser.add_argument("--max_new_tokens", type=int, default=512)
     parser.add_argument("--temperature", type=float, default=0.1)
     parser.add_argument("--top_p", type=float, default=0.9)
     parser.add_argument("--use_4bit", action="store_true")
     parser.add_argument("--bf16", action="store_true")
-    return parser.parse_args()
+    parser.add_argument("--cpu", action="store_true", help="Force CPU inference")
+    parser.add_argument(
+        "--with_lora",
+        action="store_true",
+        help=f"Enable default LoRA adapter: {DEFAULT_LORA_PATH}",
+    )
+    args = parser.parse_args()
+    if args.with_lora and args.lora_path is None:
+        args.lora_path = DEFAULT_LORA_PATH
+    return args
 
 
 def create_app(runtime: ModelRuntime) -> Flask:
@@ -127,7 +149,7 @@ def create_app(runtime: ModelRuntime) -> Flask:
 
     @app.get("/health")
     def health_check():
-        return jsonify({"status": "ok"})
+        return jsonify({"status": "ok", "device": runtime.device, "base_model": runtime.args.base_model})
 
     @app.post("/generate")
     def generate_text():
