@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate } from "react-router";
 import { Button, Card, CardBody, Chip, Textarea } from "@heroui/react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import request from "../http/request";
 import api from "../http/conservation";
 import type { Message, Content } from "../types/conservation"
@@ -36,29 +38,14 @@ function getUserIdFromToken() {
   }
 }
 
-// function normalizeMessage(raw: unknown): Message | null {
-//   const data = asObject(raw);
-//   const role = data.role === "assistant" ? "assistant" : data.role === "user" ? "user" : null;
-//   const content = typeof data.content === "string" ? data.content : typeof data.message === "string" ? data.message : "";
-//   if (!role || !content) return null;
-//   return {
-//     id: String(data.id ?? uid()),
-//     role,
-//     content,
-//     createdAt: Number(data.createdAt ?? data.created_at ?? Date.now()),
-//   };
-// }
-
 function normalizeConversation(raw: unknown, userId: string, index: number): Conversation | null {
   const data = asObject(raw);
   const id = data.id ?? data._id ?? (userId ? `${userId}-${index}` : "");
   if (!id) return null;
-  // const rawMessages = Array.isArray(data.messages) ? data.messages : [];
-  // const messages = rawMessages.map(normalizeMessage).filter(Boolean) as Message[];
-  // console.log(data)
   const time = data.updated_at ?? data.updatedAt ?? data.created_at ?? Date.now();
 
-  const updatedAt = typeof time === "number" ? time : new Date(time).getTime();
+  const updatedAt =
+    typeof time === "number" || typeof time === "string" ? new Date(time).getTime() : Date.now();
   return {
     id: String(id),
     title: typeof data.title === "string" && data.title.trim() ? data.title : "新对话",
@@ -96,7 +83,9 @@ export default function HomePage() {
         const list = rawList.map((raw: unknown, index: number) => normalizeConversation(raw, userId, index)).filter(Boolean) as Conversation[];
         setConversations(list);
         console.log(list);
-        getMessages(activeConversationId);
+        const New_Id = list[0].id;
+        setActiveConversationId(New_Id);
+        getMessages(New_Id);
       } catch (error) {
         console.error("加载会话失败:", error);
       }
@@ -106,34 +95,32 @@ export default function HomePage() {
     loadConversations();
   }, []);
 
-  useEffect(() => {
-    if (!activeConversationId && sortedConversations.length > 0) {
-      setActiveConversationId(sortedConversations[0].id);
-    }
-  }, [activeConversationId, sortedConversations]);
 
   const activeConversation = useMemo(
     () => conversations.find((item) => item.id === activeConversationId),
     [conversations, activeConversationId]
   );
 
-  // useEffect(() => {
-  //   messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  // }, [activeConversation?.messages.length, isSending]);
+  useEffect(() => {
+    messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [activeConversationMessages.length, isSending]);
 
   const createNewConversation = async () => {
     try{
       const newConversation = {
         title: "新对话"
       }
-      const response = await api.Create_Conversation(newConversation);
-      loadConversations();
+      const response = api.Create_Conversation(newConversation).then(() => {
+        loadConversations();
+      });
     }catch(error){
       console.error("创建对话失败", error)
     }
   };
 
   const getMessages = async (c_id: string) => {
+    console.log(c_id);
+    if (c_id === "") return;
     try{
       const response = await api.Get_Message(c_id);
       setActiveConversationMessages(response.data);
@@ -160,18 +147,13 @@ export default function HomePage() {
 
   const submitMessage = async (e?: FormEvent) => {
     e?.preventDefault();
+    setIsSending(true);
     try{
       const text = inputValue.trim();
-      console.log(text);
-      const content:Content = {
-        text: text,
-        attachments: []
-      }
-      const message:Message = {
-        role: "user",
-        content: content
-      }
-      const response = await api.Add_Message(message, activeConversationId);
+      if (!text || !activeConversationId) return;
+      await api.SendAndGenerate({ question: text }, activeConversationId);
+      setInputValue("");
+      await getMessages(activeConversationId);
     }catch {
       const fallbackMessage: Message = {
         role: "assistant",
@@ -273,8 +255,8 @@ export default function HomePage() {
             ) : (
               <div className="space-y-6">
                 {activeConversationMessages.map((message) => {
-                  console.log(message);
                   const isUser = message.role === "user";
+                  const markdownText = String(message?.content?.text ?? "");
                   return (
                     <div key={message.id} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
                       <Card
@@ -283,7 +265,46 @@ export default function HomePage() {
                           isUser ? "bg-[#F4F4F4] text-black" : "border border-slate-200 bg-white text-black"
                         }`}
                       >
-                        <CardBody className="px-4 py-3 text-sm leading-7">{message.content.text}</CardBody>
+                        <CardBody className="px-4 py-3 text-sm leading-7">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={{
+                              p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                              ul: ({ children }) => <ul className="mb-2 list-disc pl-5 last:mb-0">{children}</ul>,
+                              ol: ({ children }) => <ol className="mb-2 list-decimal pl-5 last:mb-0">{children}</ol>,
+                              li: ({ children }) => <li className="mb-1">{children}</li>,
+                              a: ({ href, children }) => (
+                                <a
+                                  href={href}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-emerald-700 underline break-all"
+                                >
+                                  {children}
+                                </a>
+                              ),
+                              code: ({ className, children, ...props }) => {
+                                const inline = !className;
+                                return inline ? (
+                                  <code className="rounded bg-slate-200 px-1 py-0.5 text-[0.9em]" {...props}>
+                                    {children}
+                                  </code>
+                                ) : (
+                                  <code className={className} {...props}>
+                                    {children}
+                                  </code>
+                                );
+                              },
+                              pre: ({ children }) => (
+                                <pre className="my-2 overflow-x-auto rounded-md bg-slate-900 p-3 text-slate-100">
+                                  {children}
+                                </pre>
+                              ),
+                            }}
+                          >
+                            {markdownText}
+                          </ReactMarkdown>
+                        </CardBody>
                       </Card>
                     </div>
                   );
