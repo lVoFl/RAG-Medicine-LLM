@@ -32,6 +32,29 @@ body {
   width: 100%;
 }
 
+.conversation-ripple-container {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.conversation-ripple {
+  position: absolute;
+  transform: translate(-50%, -50%) scale(0);
+  border-radius: 9999px;
+  background: rgba(62, 62, 62, 0.16);
+  pointer-events: none;
+  z-index: 0;
+  animation: conversation-ripple 520ms ease-out forwards;
+}
+
+@keyframes conversation-ripple {
+  to {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+  }
+}
+
 h1 {
   font-size: 3.2em;
   line-height: 1.1;

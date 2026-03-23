@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import type { FormEvent, MouseEvent } from "react";
 import { useNavigate } from "react-router";
-import { Button, Card, CardBody, Chip, Textarea } from "@heroui/react";
+import { Button, Card, CardBody, Chip, Textarea, Input } from "@heroui/react";
+import { Popover, PopoverTrigger, PopoverContent } from "@heroui/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import request from "../http/request";
 import api from "../http/conservation";
 import type { Message, Content } from "../types/conservation"
+import { Edit, Trash } from "../icon/icon"
 
 type ChatRole = "user" | "assistant";
 
@@ -64,6 +65,7 @@ export default function HomePage() {
   const [inputValue, setInputValue] = useState("");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string>("");
+  const [openPopoverId, setOpenPopoverId] = useState<string | null>(null);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const [activeConversationMessages, setActiveConversationMessages] = useState<any[]>([]);
   const sortedConversations = useMemo(
@@ -173,6 +175,22 @@ export default function HomePage() {
     navigate("/login");
   };
 
+  const handleConversationRipple = (e: MouseEvent<HTMLDivElement>) => {
+    const container = e.currentTarget;
+    const rect = container.getBoundingClientRect();
+    const size = Math.max(rect.width, rect.height) * 1.2;
+    const ripple = document.createElement("span");
+
+    ripple.className = "conversation-ripple";
+    ripple.style.width = `${size}px`;
+    ripple.style.height = `${size}px`;
+    ripple.style.left = `${e.clientX - rect.left}px`;
+    ripple.style.top = `${e.clientY - rect.top}px`;
+
+    container.appendChild(ripple);
+    ripple.addEventListener("animationend", () => ripple.remove(), { once: true });
+  };
+
   return (
     <div className="flex h-screen w-full  text-slate-800">
       <aside
@@ -196,18 +214,76 @@ export default function HomePage() {
             {sortedConversations.map((item) => {
               const isActive = item.id === activeConversationId;
               return (
-                <Button
+                <div
                   key={item.id}
-                  onClick={() => {setActiveConversationId(item.id);getMessages(item.id);}}
-                  variant={isActive ? "flat" : "light"}
-                  className={`w-full justify-start rounded-lg border text-left text-sm transition-colors ${
-                    isActive
-                      ? "border-emerald-200 bg-emerald-50 font-semibold text-emerald-700 shadow-sm"
-                      : "border-transparent hover:bg-white/70"
+                  onMouseDown={handleConversationRipple}
+                  className={`conversation-ripple-container flex w-full items-center rounded-lg border text-sm transition-colors transition-transform duration-150 active:scale-[0.98] ${
+                    isActive ? "bg-[#EAEAEA]" : "border-transparent hover:bg-[#EFEFEF]"
                   }`}
                 >
-                  {item.title}
-                </Button>
+                  <div
+                    onClick={() => {setActiveConversationId(item.id);getMessages(item.id);}}
+                    className="relative z-[1] flex-1 cursor-pointer px-3 py-2 text-left bg-transparent"
+                  >
+                    {item.title}
+                  </div>
+                  <Popover
+                    placement="bottom"
+                    isOpen={openPopoverId === item.id}
+                    onOpenChange={(isOpen) => setOpenPopoverId(isOpen ? item.id : null)}
+                  >
+                    <PopoverTrigger>
+                      <Button
+                        isIconOnly
+                        variant="light"
+                        disableRipple
+                        className="relative z-[1] ml-auto border-0 bg-transparent text-[#838383] shadow-none outline-none ring-0 data-[hover=true]:text-[#2E2E2E] data-[hover=true]:border-0 data-[hover=true]:border-transparent data-[hover=true]:shadow-none
+                          data-[hover=true]:bg-transparent data-[pressed=true]:border-0 data-[pressed=true]:shadow-none data-[focus=true]:border-0 
+                          data-[focus=true]:outline-none data-[focus=true]:ring-0 data-[focus=true]:shadow-none 
+                          data-[focus-visible=true]:border-0 data-[focus-visible=true]:outline-none data-[focus-visible=true]:ring-0"
+                      >
+                        <Edit />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[220px] rounded-lg border border-slate-200 bg-white p-1 shadow-md">
+                      <div className="flex flex-col gap-1">
+                        <Input
+                          label="新标题"
+                          size="sm"
+                          variant="underlined"
+                          classNames={{
+                              label: "text-[12px] text-slate-500",
+                              input: "text-sm",
+                            }}
+                          />
+                          <div className="flex items-center justify-end gap-2">
+                            <Button size="sm" color="primary" className="h-7 min-w-0 px-3 text-xs">
+                              提交
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="faded"
+                              className="h-7 min-w-0 px-2 text-xs text-slate-600"
+                              onPress={() => setOpenPopoverId(null)}
+                            >
+                              取消
+                            </Button>
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                  <Button
+                    isIconOnly
+                    variant="light"
+                    disableRipple
+                    className="relative z-[1] ml-auto border-0 bg-transparent text-[#838383] shadow-none outline-none ring-0 data-[hover=true]:text-[#2E2E2E] data-[hover=true]:border-0 data-[hover=true]:border-transparent data-[hover=true]:shadow-none
+                      data-[hover=true]:bg-transparent data-[pressed=true]:border-0 data-[pressed=true]:shadow-none data-[focus=true]:border-0 
+                      data-[focus=true]:outline-none data-[focus=true]:ring-0 data-[focus=true]:shadow-none 
+                      data-[focus-visible=true]:border-0 data-[focus-visible=true]:outline-none data-[focus-visible=true]:ring-0"
+                  >
+                    <Trash />
+                  </Button>
+                </div>
               );
             })}
           </div>
