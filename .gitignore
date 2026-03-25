@@ -18,6 +18,7 @@ app/.npm-cache
 /database/wiki_diabetes
 /database/embeddings
 /database/faiss_index
+/database/faiss_index.zip
 
 .vscode/*
 .claude/*
