@@ -13,7 +13,10 @@ from pathlib import Path
 import numpy as np
 from FlagEmbedding import BGEM3FlagModel
 
-PROCESSED_DIR = Path(__file__).parent / "processed_pdf"
+PROCESSED_DIRS = [
+    Path(__file__).parent / "processed_pdf",
+    Path(__file__).parent / "processed_txt",
+]
 OUTPUT_DIR = Path(__file__).parent / "embeddings"
 BATCH_SIZE = 12
 MAX_LENGTH = 8192
@@ -55,9 +58,12 @@ def main():
 
     print("=" * 60)
     print("Step 1: Loading chunks ...")
-    chunks = load_all_chunks(PROCESSED_DIR)
+    chunks = []
+    for processed_dir in PROCESSED_DIRS:
+        print(f"  Reading from: {processed_dir}")
+        chunks.extend(load_all_chunks(processed_dir))
     if not chunks:
-        print("No chunks found. Check PROCESSED_DIR path.")
+        print("No chunks found. Check PROCESSED_DIRS paths.")
         return
     print(f"  Total chunks: {len(chunks)}")
 

@@ -1,8 +1,13 @@
 /server/node_modules
 
+app/.npm-cache
+
 /model/model
 /model/outputs
 /model/SFT_data
+/model/qwen2.5-1.7B
+/model/model.zip
+/model/__pycache__/
 
 /database/finish_file
 /database/medlive_chunks
@@ -12,6 +17,7 @@
 /database/processed_txt
 /database/wiki_diabetes
 /database/embeddings
+/database/faiss_index
 
 .vscode/*
 .claude/*

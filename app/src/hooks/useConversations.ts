@@ -153,6 +153,27 @@ export function useConversations() {
     [activeConversationId, getMessages, inputValue, updateConversationMessages]
   );
 
+  const renameConversation = useCallback(async (conversationId: string, nextTitle: string) => {
+    const title = nextTitle.trim();
+    if (!conversationId || !title) return false;
+
+    try {
+      const response = await api.Patch_Conservation({ title }, conversationId);
+      const updatedAtRaw = response.data?.updated_at ?? response.data?.updatedAt ?? Date.now();
+      const updatedAt = new Date(updatedAtRaw).getTime() || Date.now();
+
+      setConversations((prev) =>
+        prev.map((conversation) =>
+          conversation.id === conversationId ? { ...conversation, title, updatedAt } : conversation
+        )
+      );
+      return true;
+    } catch (error) {
+      console.error("更新对话标题失败:", error);
+      return false;
+    }
+  }, []);
+
   return {
     isSending,
     inputValue,
@@ -161,6 +182,7 @@ export function useConversations() {
     activeConversationMessages,
     sortedConversations,
     createNewConversation,
+    renameConversation,
     handleSelectConversation,
     submitMessage,
   };

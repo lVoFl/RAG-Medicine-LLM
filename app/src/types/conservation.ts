@@ -3,8 +3,8 @@ export interface New_Conservation {
 }
 
 export interface Update_Conservation {
-    title: string;
-    last_message: JSON;
+    title?: string;
+    last_message?: unknown;
 }
 
 type ChatRole = "user" | "assistant" | "system" | "summary" | "tool";

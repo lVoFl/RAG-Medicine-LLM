@@ -13,6 +13,13 @@ type MessageListProps = {
 
 const SUGGESTIONS = ["帮我写一个 React 登录页", "解释下 JWT 登录流程", "生成一个课程学习计划", "优化这段 SQL 性能"];
 
+function normalizeMarkdown(input: string): string {
+  const text = (input || "").replace(/\r\n?/g, "\n");
+  const unescapedNewline = text.includes("\\n") && !text.includes("\n") ? text.replace(/\\n/g, "\n") : text;
+  // Some model outputs headings as `###标题`; add a space so markdown parser can recognize them.
+  return unescapedNewline.replace(/(^|\n)(\s{0,3}#{1,6})([^\s#])/g, "$1$2 $3");
+}
+
 export default function MessageList({ messages, isSending, messageEndRef, onSuggestionClick }: MessageListProps) {
   return (
     <section className="mx-auto w-full max-w-4xl flex-1 overflow-y-auto px-4 py-6 md:px-6">
@@ -37,7 +44,7 @@ export default function MessageList({ messages, isSending, messageEndRef, onSugg
         <div className="space-y-6">
           {messages.map((message, index) => {
             const isUser = message.role === "user";
-            const markdownText = String(message?.content?.text ?? "");
+            const markdownText = normalizeMarkdown(String(message?.content?.text ?? ""));
             const key = message.id ?? `${message.role}-${index}`;
             return (
               <div key={key} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
@@ -51,10 +58,17 @@ export default function MessageList({ messages, isSending, messageEndRef, onSugg
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       components={{
+                        h1: ({ children }) => <h1 className="mb-3 mt-4 text-2xl font-bold leading-8 first:mt-0">{children}</h1>,
+                        h2: ({ children }) => <h2 className="mb-3 mt-4 text-xl font-semibold leading-7 first:mt-0">{children}</h2>,
+                        h3: ({ children }) => <h3 className="mb-2 mt-3 text-lg font-semibold leading-7 first:mt-0">{children}</h3>,
+                        h4: ({ children }) => <h4 className="mb-2 mt-3 text-base font-semibold leading-6 first:mt-0">{children}</h4>,
+                        h5: ({ children }) => <h5 className="mb-2 mt-2 text-sm font-semibold leading-6 first:mt-0">{children}</h5>,
+                        h6: ({ children }) => <h6 className="mb-2 mt-2 text-sm font-medium leading-6 text-slate-600 first:mt-0">{children}</h6>,
                         p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
                         ul: ({ children }) => <ul className="mb-2 list-disc pl-5 last:mb-0">{children}</ul>,
                         ol: ({ children }) => <ol className="mb-2 list-decimal pl-5 last:mb-0">{children}</ol>,
                         li: ({ children }) => <li className="mb-1">{children}</li>,
+                        strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
                         a: ({ href, children }) => (
                           <a href={href} target="_blank" rel="noreferrer" className="break-all text-emerald-700 underline">
                             {children}

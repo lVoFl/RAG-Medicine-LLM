@@ -53,7 +53,7 @@ router.post("/generate", async (req, res, next) => {
       temperature,
       topP,
     });
-
+    console.log(result)
     const usage =
       result.usage && typeof result.usage === "object"
         ? {

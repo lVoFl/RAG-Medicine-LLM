@@ -10,6 +10,7 @@ type SidebarProps = {
   activeConversationId: string;
   onCreateConversation: () => void;
   onSelectConversation: (id: string) => void;
+  onRenameConversation: (id: string, title: string) => Promise<boolean>;
   onLogout: () => void;
   onConversationMouseDown: (e: MouseEvent<HTMLDivElement>) => void;
 };
@@ -20,10 +21,22 @@ export default function Sidebar({
   activeConversationId,
   onCreateConversation,
   onSelectConversation,
+  onRenameConversation,
   onLogout,
   onConversationMouseDown,
 }: SidebarProps) {
   const [openPopoverId, setOpenPopoverId] = useState<string | null>(null);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+
+  const handleRename = async (conversationId: string) => {
+    if (renamingId) return;
+    setRenamingId(conversationId);
+    const ok = await onRenameConversation(conversationId, draftTitle);
+    setRenamingId(null);
+    if (!ok) return;
+    setOpenPopoverId(null);
+  };
 
   return (
     <aside
@@ -63,7 +76,12 @@ export default function Sidebar({
                 <Popover
                   placement="bottom"
                   isOpen={openPopoverId === item.id}
-                  onOpenChange={(isOpen) => setOpenPopoverId(isOpen ? item.id : null)}
+                  onOpenChange={(isOpen) => {
+                    setOpenPopoverId(isOpen ? item.id : null);
+                    if (isOpen) {
+                      setDraftTitle(item.title);
+                    }
+                  }}
                 >
                   <PopoverTrigger>
                     <Button
@@ -81,13 +99,27 @@ export default function Sidebar({
                         label="新标题"
                         size="sm"
                         variant="underlined"
+                        value={openPopoverId === item.id ? draftTitle : ""}
+                        onValueChange={setDraftTitle}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void handleRename(item.id);
+                          }
+                        }}
                         classNames={{
                           label: "text-[12px] text-slate-500",
                           input: "text-sm",
                         }}
                       />
                       <div className="flex items-center justify-end gap-2">
-                        <Button size="sm" color="primary" className="h-7 min-w-0 px-3 text-xs">
+                        <Button
+                          size="sm"
+                          color="primary"
+                          className="h-7 min-w-0 px-3 text-xs"
+                          isLoading={renamingId === item.id}
+                          onPress={() => void handleRename(item.id)}
+                        >
                           提交
                         </Button>
                         <Button
