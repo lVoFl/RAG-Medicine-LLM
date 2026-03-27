@@ -35,29 +35,48 @@ def build_user_text(question: str, context: Optional[str]) -> str:
 def build_chat_messages(
     question: str,
     context: Optional[str],
+    history: Optional[list[dict]],
     system_prompt: Optional[str],
     fallback_system_prompt: str = DEFAULT_SYSTEM_PROMPT,
 ) -> list[dict[str, str]]:
     effective_system_prompt = (system_prompt or "").strip() or fallback_system_prompt
-    return [
-        {"role": "system", "content": effective_system_prompt},
-        {"role": "user", "content": build_user_text(question=question, context=context)},
-    ]
+    messages: list[dict[str, str]] = [{"role": "system", "content": effective_system_prompt}]
+
+    normalized_history: list[dict[str, str]] = []
+    for item in history or []:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role", "")).strip().lower()
+        content = str(item.get("content", "")).strip()
+        if not content:
+            continue
+        if role not in {"user", "assistant"}:
+            continue
+        if normalized_history and normalized_history[-1]["role"] == role:
+            # Collapse consecutive same-role messages to reduce noisy/duplicated turns.
+            normalized_history[-1] = {"role": role, "content": content}
+            continue
+        normalized_history.append({"role": role, "content": content})
+
+    messages.extend(normalized_history)
+
+    messages.append({"role": "user", "content": build_user_text(question=question, context=context)})
+    return messages
 
 
 def render_chat_prompt(
     tokenizer,
     question: str,
     context: Optional[str],
+    history: Optional[list[dict]],
     system_prompt: Optional[str],
     fallback_system_prompt: str = DEFAULT_SYSTEM_PROMPT,
 ) -> str:
     messages = build_chat_messages(
         question=question,
         context=context,
+        history=history,
         system_prompt=system_prompt,
         fallback_system_prompt=fallback_system_prompt,
     )
-    print("messages: ")
-    print(messages)
     return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)

@@ -108,6 +108,7 @@ class ModelRuntime:
         self,
         question: str,
         context: Optional[str] = None,
+        history: Optional[list[dict]] = None,
         system_prompt: Optional[str] = None,
         max_new_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
@@ -127,6 +128,7 @@ class ModelRuntime:
             "generate start | "
             f"question='{clip_text(question, self.args.debug_max_chars)}' "
             f"provided_context_chars={len(used_context)} "
+            f"history_turns={len(history or [])} "
             f"use_rag={rag_enabled}"
         )
         if rag_enabled and not used_context:
@@ -149,6 +151,7 @@ class ModelRuntime:
             tokenizer=self.tokenizer,
             question=question,
             context=used_context,
+            history=history,
             system_prompt=system_prompt,
             fallback_system_prompt=self.args.system_prompt,
         )

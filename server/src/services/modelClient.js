@@ -4,6 +4,7 @@ const MODEL_SERVICE_TIMEOUT_MS = Number(process.env.MODEL_SERVICE_TIMEOUT_MS) ||
 export async function generateWithLocalModel({
   question,
   context,
+  history,
   systemPrompt,
   maxNewTokens,
   temperature,
@@ -22,6 +23,7 @@ export async function generateWithLocalModel({
       body: JSON.stringify({
         question,
         context,
+        history,
         system_prompt: systemPrompt,
         max_new_tokens: maxNewTokens,
         temperature,

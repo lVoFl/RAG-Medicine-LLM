@@ -18,7 +18,6 @@ def create_app(runtime: ModelRuntime) -> Flask:
 
     @app.post("/generate")
     def generate_text():
-        print("!")
         req_start = time.time()
         data = request.get_json(silent=True)
         if data is None:
@@ -28,6 +27,9 @@ def create_app(runtime: ModelRuntime) -> Flask:
             for key in ["question", "context", "system_prompt"]:
                 if key in safe_data and safe_data[key] is not None:
                     safe_data[key] = clip_text(str(safe_data[key]), runtime.args.debug_max_chars)
+            if "history" in safe_data and isinstance(safe_data["history"], list):
+                safe_data["history_count"] = len(safe_data["history"])
+                safe_data.pop("history", None)
             print(f"[API] /generate request: {json.dumps(safe_data, ensure_ascii=False)}")
 
         question = str(data.get("question", "") or "").strip()
@@ -35,9 +37,14 @@ def create_app(runtime: ModelRuntime) -> Flask:
             return jsonify({"error": "question is required"}), 400
 
         try:
+            history = data.get("history")
+            if history is not None and not isinstance(history, list):
+                return jsonify({"error": "history must be a list"}), 400
+
             result = runtime.generate(
                 question=question,
                 context=data.get("context"),
+                history=history,
                 system_prompt=data.get("system_prompt"),
                 max_new_tokens=data.get("max_new_tokens"),
                 temperature=data.get("temperature"),

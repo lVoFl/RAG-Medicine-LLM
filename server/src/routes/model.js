@@ -35,6 +35,7 @@ router.post("/generate", async (req, res, next) => {
     const {
       question,
       context,
+      history,
       system_prompt: systemPrompt,
       max_new_tokens: maxNewTokens,
       temperature,
@@ -48,6 +49,7 @@ router.post("/generate", async (req, res, next) => {
     const result = await generateWithLocalModel({
       question: String(question),
       context: context == null ? undefined : String(context),
+      history: Array.isArray(history) ? history : undefined,
       systemPrompt: systemPrompt == null ? undefined : String(systemPrompt),
       maxNewTokens,
       temperature,
@@ -108,7 +110,7 @@ router.post("/conversations/:id/generate", async (req, res, next) => {
       topP,
     });
     console.log(result);
-    const updateResult = await pool.query(
+    await pool.query(
       `
       UPDATE conversations
       SET

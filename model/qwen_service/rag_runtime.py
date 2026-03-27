@@ -1,4 +1,5 @@
 import json
+import logging
 import threading
 import time
 from pathlib import Path
@@ -8,6 +9,17 @@ import numpy as np
 from huggingface_hub import snapshot_download
 
 from qwen_service.text_utils import bm25_search, build_bm25_index, clip_text
+
+
+class _FastTokenizerPadWarningFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        return "with a fast tokenizer, using the `__call__` method is faster" not in message
+
+
+logging.getLogger("transformers.tokenization_utils_base").addFilter(
+    _FastTokenizerPadWarningFilter()
+)
 
 
 class RAGRuntime:
