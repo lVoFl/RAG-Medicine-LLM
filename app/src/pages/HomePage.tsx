@@ -80,12 +80,14 @@ export default function HomePage() {
         </header>
 
         <div className="flex min-h-0 flex-1 flex-col">
-          <MessageList
-            messages={activeConversationMessages}
-            isSending={isSending}
-            messageEndRef={messageEndRef}
-            onSuggestionClick={setInputValue}
-          />
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <MessageList
+              messages={activeConversationMessages}
+              isSending={isSending}
+              messageEndRef={messageEndRef}
+              onSuggestionClick={setInputValue}
+            />
+          </div>
           <MessageInput
             inputValue={inputValue}
             isSending={isSending}

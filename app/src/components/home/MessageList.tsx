@@ -22,7 +22,7 @@ function normalizeMarkdown(input: string): string {
 
 export default function MessageList({ messages, isSending, messageEndRef, onSuggestionClick }: MessageListProps) {
   return (
-    <section className="mx-auto w-full max-w-4xl flex-1 overflow-y-auto px-4 py-6 md:px-6">
+    <section className="mx-auto w-full max-w-4xl flex-1 px-4 py-6 md:px-6">
       {!messages.length ? (
         <div className="mt-14 text-center">
           <h1 className="text-3xl font-semibold text-slate-800">今天想聊点什么？</h1>
