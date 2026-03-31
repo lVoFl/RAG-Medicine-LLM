@@ -134,18 +134,71 @@ export function useConversations() {
     async (e?: FormEvent) => {
       e?.preventDefault();
       setIsSending(true);
+      const conversationId = activeConversationId;
+      const text = inputValue.trim();
+
       try {
-        const text = inputValue.trim();
-        if (!text || !activeConversationId) return;
-        await api.SendAndGenerate({ question: text }, activeConversationId);
+        if (!text || !conversationId) return;
+
+        const userMessage: Message = {
+          role: "user",
+          content: { text, attachments: [] },
+        };
+        const assistantPlaceholder: Message = {
+          role: "assistant",
+          content: { text: "", attachments: [] },
+        };
+        updateConversationMessages(conversationId, (messages) => [
+          ...messages,
+          userMessage,
+          assistantPlaceholder,
+        ]);
+
         setInputValue("");
-        await getMessages(activeConversationId);
+        await api.SendAndGenerateStream(
+          { question: text },
+          conversationId,
+          {
+            onDelta: (delta) => {
+              updateConversationMessages(conversationId, (messages) => {
+                if (!messages.length) return messages;
+                const nextMessages = [...messages];
+                const lastIndex = nextMessages.length - 1;
+                const lastMessage = nextMessages[lastIndex];
+                if (lastMessage.role !== "assistant") return messages;
+                const nextText = String(lastMessage.content?.text || "") + delta;
+                nextMessages[lastIndex] = {
+                  ...lastMessage,
+                  content: {
+                    ...(lastMessage.content || { attachments: [] }),
+                    text: nextText,
+                    attachments: Array.isArray(lastMessage.content?.attachments)
+                      ? lastMessage.content.attachments
+                      : [],
+                  },
+                };
+                return nextMessages;
+              });
+            },
+          }
+        );
+
+        await getMessages(conversationId);
       } catch {
         const fallbackMessage: Message = {
           role: "assistant",
           content: { text: "抱歉，服务暂时不可用，请稍后再试。", attachments: [] },
         };
-        updateConversationMessages(activeConversationId, (messages) => [...messages, fallbackMessage]);
+        updateConversationMessages(conversationId, (messages) => {
+          if (!messages.length) return [fallbackMessage];
+          const nextMessages = [...messages];
+          const lastIndex = nextMessages.length - 1;
+          if (nextMessages[lastIndex].role === "assistant") {
+            nextMessages[lastIndex] = fallbackMessage;
+            return nextMessages;
+          }
+          return [...nextMessages, fallbackMessage];
+        });
       } finally {
         setIsSending(false);
       }

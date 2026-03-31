@@ -79,5 +79,4 @@ def render_chat_prompt(
         system_prompt=system_prompt,
         fallback_system_prompt=fallback_system_prompt,
     )
-    print(tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True))
     return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)

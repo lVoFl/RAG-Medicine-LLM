@@ -21,6 +21,11 @@ function normalizeMarkdown(input: string): string {
 }
 
 export default function MessageList({ messages, isSending, messageEndRef, onSuggestionClick }: MessageListProps) {
+  const lastMessage = messages.length ? messages[messages.length - 1] : null;
+  const lastAssistantText =
+    lastMessage?.role === "assistant" ? String(lastMessage?.content?.text ?? "").trim() : "";
+  const showThinking = isSending && !lastAssistantText;
+
   return (
     <section className="mx-auto w-full max-w-4xl flex-1 px-4 py-6 md:px-6">
       {!messages.length ? (
@@ -45,6 +50,9 @@ export default function MessageList({ messages, isSending, messageEndRef, onSugg
           {messages.map((message, index) => {
             const isUser = message.role === "user";
             const markdownText = normalizeMarkdown(String(message?.content?.text ?? ""));
+            if (!isUser && isSending && !markdownText.trim()) {
+              return null;
+            }
             const key = message.id ?? `${message.role}-${index}`;
             return (
               <div key={key} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
@@ -98,7 +106,7 @@ export default function MessageList({ messages, isSending, messageEndRef, onSugg
               </div>
             );
           })}
-          {isSending ? (
+          {showThinking ? (
             <div className="flex justify-start">
               <Card shadow="none" className="border border-slate-200 bg-white">
                 <CardBody className="px-4 py-3 text-sm text-slate-500">正在思考...</CardBody>

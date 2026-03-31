@@ -3,11 +3,11 @@ import importlib.metadata
 import threading
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 
 import torch
 from peft import PeftModel
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, TextIteratorStreamer
 
 from qwen_service.prompts import render_chat_prompt
 from qwen_service.rag_runtime import RAGRuntime
@@ -103,8 +103,7 @@ class ModelRuntime:
         if self.args.debug_log:
             print(f"[Model] {msg}")
 
-    @torch.inference_mode()
-    def generate(
+    def _prepare_generation(
         self,
         question: str,
         context: Optional[str] = None,
@@ -119,7 +118,7 @@ class ModelRuntime:
         rag_rerank_top_n: Optional[int] = None,
         rag_rrf_k: Optional[int] = None,
         rag_max_chars_per_doc: Optional[int] = None,
-    ):
+    ) -> dict:
         start_t = time.time()
         rag_enabled = bool(self.rag_runtime) and (self.args.enable_rag if use_rag is None else bool(use_rag))
         used_context = (context or "").strip()
@@ -159,14 +158,60 @@ class ModelRuntime:
         gen_temperature = float(self.args.temperature if temperature is None else temperature)
         gen_top_p = float(self.args.top_p if top_p is None else top_p)
 
+        return {
+            "start_t": start_t,
+            "prompt": prompt,
+            "used_context": used_context,
+            "retrieved_docs": retrieved_docs,
+            "gen_max_new_tokens": gen_max_new_tokens,
+            "gen_temperature": gen_temperature,
+            "gen_top_p": gen_top_p,
+            "rag_enabled": rag_enabled,
+        }
+
+    @torch.inference_mode()
+    def generate(
+        self,
+        question: str,
+        context: Optional[str] = None,
+        history: Optional[list[dict]] = None,
+        system_prompt: Optional[str] = None,
+        max_new_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        top_p: Optional[float] = None,
+        use_rag: Optional[bool] = None,
+        rag_top_k: Optional[int] = None,
+        rag_candidate_k: Optional[int] = None,
+        rag_rerank_top_n: Optional[int] = None,
+        rag_rrf_k: Optional[int] = None,
+        rag_max_chars_per_doc: Optional[int] = None,
+    ):
+        prepared = self._prepare_generation(
+            question=question,
+            context=context,
+            history=history,
+            system_prompt=system_prompt,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            use_rag=use_rag,
+            rag_top_k=rag_top_k,
+            rag_candidate_k=rag_candidate_k,
+            rag_rerank_top_n=rag_rerank_top_n,
+            rag_rrf_k=rag_rrf_k,
+            rag_max_chars_per_doc=rag_max_chars_per_doc,
+        )
+
         with self.lock:
-            inputs = self.tokenizer(prompt, return_tensors="pt", add_special_tokens=False).to(self.device)
+            inputs = self.tokenizer(
+                prepared["prompt"], return_tensors="pt", add_special_tokens=False
+            ).to(self.device)
             output_ids = self.model.generate(
                 **inputs,
-                max_new_tokens=gen_max_new_tokens,
-                temperature=gen_temperature,
-                top_p=gen_top_p,
-                do_sample=gen_temperature > 0,
+                max_new_tokens=prepared["gen_max_new_tokens"],
+                temperature=prepared["gen_temperature"],
+                top_p=prepared["gen_top_p"],
+                do_sample=prepared["gen_temperature"] > 0,
                 pad_token_id=self.tokenizer.pad_token_id,
                 eos_token_id=self.tokenizer.eos_token_id,
             )
@@ -178,21 +223,123 @@ class ModelRuntime:
             f"prompt_tokens={int(inputs['input_ids'].shape[-1])} "
             f"completion_tokens={int(new_ids.shape[-1])} "
             f"answer='{clip_text(answer, self.args.debug_max_chars)}' "
-            f"elapsed_ms={int((time.time() - start_t) * 1000)}"
+            f"elapsed_ms={int((time.time() - prepared['start_t']) * 1000)}"
         )
 
         return {
             "answer": answer,
-            "context": used_context,
-            "retrieved_docs": retrieved_docs,
+            "context": prepared["used_context"],
+            "retrieved_docs": prepared["retrieved_docs"],
             "usage": {
                 "prompt_tokens": int(inputs["input_ids"].shape[-1]),
                 "completion_tokens": int(new_ids.shape[-1]),
             },
             "params": {
-                "max_new_tokens": gen_max_new_tokens,
-                "temperature": gen_temperature,
-                "top_p": gen_top_p,
-                "use_rag": rag_enabled,
+                "max_new_tokens": prepared["gen_max_new_tokens"],
+                "temperature": prepared["gen_temperature"],
+                "top_p": prepared["gen_top_p"],
+                "use_rag": prepared["rag_enabled"],
+            },
+        }
+
+    def generate_stream(
+        self,
+        question: str,
+        context: Optional[str] = None,
+        history: Optional[list[dict]] = None,
+        system_prompt: Optional[str] = None,
+        max_new_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        top_p: Optional[float] = None,
+        use_rag: Optional[bool] = None,
+        rag_top_k: Optional[int] = None,
+        rag_candidate_k: Optional[int] = None,
+        rag_rerank_top_n: Optional[int] = None,
+        rag_rrf_k: Optional[int] = None,
+        rag_max_chars_per_doc: Optional[int] = None,
+    ) -> Iterator[dict]:
+        prepared = self._prepare_generation(
+            question=question,
+            context=context,
+            history=history,
+            system_prompt=system_prompt,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            use_rag=use_rag,
+            rag_top_k=rag_top_k,
+            rag_candidate_k=rag_candidate_k,
+            rag_rerank_top_n=rag_rerank_top_n,
+            rag_rrf_k=rag_rrf_k,
+            rag_max_chars_per_doc=rag_max_chars_per_doc,
+        )
+
+        with self.lock:
+            inputs = self.tokenizer(
+                prepared["prompt"], return_tensors="pt", add_special_tokens=False
+            ).to(self.device)
+            print(prepared["prompt"])
+            prompt_tokens = int(inputs["input_ids"].shape[-1])
+            streamer = TextIteratorStreamer(
+                self.tokenizer, skip_prompt=True, skip_special_tokens=True
+            )
+            generation_error: list[Exception] = []
+
+            def _run_generation():
+                try:
+                    with torch.inference_mode():
+                        self.model.generate(
+                            **inputs,
+                            streamer=streamer,
+                            max_new_tokens=prepared["gen_max_new_tokens"],
+                            temperature=prepared["gen_temperature"],
+                            top_p=prepared["gen_top_p"],
+                            do_sample=prepared["gen_temperature"] > 0,
+                            pad_token_id=self.tokenizer.pad_token_id,
+                            eos_token_id=self.tokenizer.eos_token_id,
+                        )
+                except Exception as exc:  # pragma: no cover - async background error path
+                    generation_error.append(exc)
+
+            worker = threading.Thread(target=_run_generation, daemon=True)
+            worker.start()
+
+            answer_parts: list[str] = []
+            for token_text in streamer:
+                if token_text:
+                    answer_parts.append(token_text)
+                    yield {"type": "delta", "text": token_text}
+
+            worker.join()
+            if generation_error:
+                raise generation_error[0]
+
+        answer = "".join(answer_parts).strip()
+        completion_tokens = int(
+            self.tokenizer(answer, add_special_tokens=False, return_tensors="pt")["input_ids"].shape[-1]
+        )
+
+        self._log(
+            "generate stream done | "
+            f"prompt_tokens={prompt_tokens} "
+            f"completion_tokens={completion_tokens} "
+            f"answer='{clip_text(answer, self.args.debug_max_chars)}' "
+            f"elapsed_ms={int((time.time() - prepared['start_t']) * 1000)}"
+        )
+
+        yield {
+            "type": "end",
+            "answer": answer,
+            "context": prepared["used_context"],
+            "retrieved_docs": prepared["retrieved_docs"],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+            },
+            "params": {
+                "max_new_tokens": prepared["gen_max_new_tokens"],
+                "temperature": prepared["gen_temperature"],
+                "top_p": prepared["gen_top_p"],
+                "use_rag": prepared["rag_enabled"],
             },
         }

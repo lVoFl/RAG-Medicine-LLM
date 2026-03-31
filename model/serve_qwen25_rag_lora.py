@@ -18,6 +18,7 @@ def main():
     print(f"Model service listening on http://{args.host}:{args.port}")
     print("Health endpoint: GET /health")
     print("Generate endpoint: POST /generate")
+    print("Stream endpoint: POST /generate/stream")
 
     app.run(host=args.host, port=args.port, debug=False, threaded=True)
 

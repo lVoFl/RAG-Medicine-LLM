@@ -27,8 +27,10 @@ export default function MessageInput({ inputValue, isSending, onInputChange, onS
             variant="bordered"
             classNames={{
               base: "w-full",
+              inputWrapper:
+                "border-default-200 data-[hover=true]:border-default-400 group-data-[focus=true]:!border-emerald-500 group-data-[focus=true]:data-[hover=true]:!border-emerald-500 group-data-[focus-visible=true]:!border-emerald-500",
               innerWrapper: "items-center",
-              input: "min-h-[28px] max-h-40 bg-slate-50 py-0 text-sm leading-6",
+              input: "min-h-[28px] max-h-40 bg-slate-50 py-0 text-md leading-6",
             }}
           />
         </div>

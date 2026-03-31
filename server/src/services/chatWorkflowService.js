@@ -12,7 +12,7 @@ const MODEL_RESPONSE_RESERVE_TOKENS =
 const MODEL_HISTORY_MAX_TOKENS = Number(process.env.MODEL_HISTORY_MAX_TOKENS) || 2048;
 const PROMPT_SAFETY_MARGIN_TOKENS = Number(process.env.MODEL_PROMPT_SAFETY_MARGIN_TOKENS) || 128;
 
-function normalizeUsage(usage) {
+export function normalizeUsage(usage) {
   if (!usage || typeof usage !== "object") return null;
   const promptTokens = Number(usage.prompt_tokens || 0);
   const completionTokens = Number(usage.completion_tokens || 0);
@@ -85,7 +85,7 @@ function buildConversationHistoryWithinTokenBudget(historyMessages, maxTokens) {
   };
 }
 
-export async function runConversationWorkflow({
+export async function prepareConversationGeneration({
   userId,
   conversationId,
   question,
@@ -131,6 +131,68 @@ export async function runConversationWorkflow({
     tokens: null,
   });
 
+  return {
+    history,
+    userMessage,
+    baseContext,
+  };
+}
+
+export async function persistConversationGeneration({
+  conversationId,
+  userMessage,
+  answer,
+  usage,
+  params,
+}) {
+  const normalizedUsage = normalizeUsage(usage);
+  let persistedUserMessage = userMessage;
+  if (normalizedUsage?.prompt_tokens != null) {
+    persistedUserMessage = await patchMessage({
+      conversationId,
+      messageId: userMessage.id,
+      tokens: normalizedUsage.prompt_tokens,
+    });
+  }
+
+  const assistantMessage = await createMessage({
+    conversationId,
+    role: "assistant",
+    content: {
+      text: String(answer || ""),
+      usage: normalizedUsage,
+    },
+    tokens: normalizedUsage?.completion_tokens ?? null,
+  });
+
+  return {
+    user_message: persistedUserMessage,
+    assistant_message: assistantMessage,
+    answer: assistantMessage.content.text,
+    usage: normalizedUsage,
+    params: params || null,
+  };
+}
+
+export async function runConversationWorkflow({
+  userId,
+  conversationId,
+  question,
+  context,
+  systemPrompt,
+  maxNewTokens,
+  temperature,
+  topP,
+}) {
+  const { history, userMessage, baseContext } = await prepareConversationGeneration({
+    userId,
+    conversationId,
+    question,
+    context,
+    systemPrompt,
+    maxNewTokens,
+  });
+
   const modelResult = await generateWithLocalModel({
     question,
     context: baseContext || undefined,
@@ -140,32 +202,11 @@ export async function runConversationWorkflow({
     temperature,
     topP,
   });
-
-  const usage = normalizeUsage(modelResult.usage);
-  let persistedUserMessage = userMessage;
-  if (usage?.prompt_tokens != null) {
-    persistedUserMessage = await patchMessage({
-      conversationId,
-      messageId: userMessage.id,
-      tokens: usage.prompt_tokens,
-    });
-  }
-
-  const assistantMessage = await createMessage({
+  return persistConversationGeneration({
     conversationId,
-    role: "assistant",
-    content: { 
-      text: String(modelResult.answer || ""), 
-      usage: usage
-    },
-    tokens: usage?.completion_tokens ?? null,
+    userMessage,
+    answer: modelResult.answer,
+    usage: modelResult.usage,
+    params: modelResult.params,
   });
-
-  return {
-    user_message: persistedUserMessage,
-    assistant_message: assistantMessage,
-    answer: assistantMessage.content.text,
-    usage,
-    params: modelResult.params || null,
-  };
 }
