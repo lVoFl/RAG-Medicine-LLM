@@ -22,3 +22,5 @@ app/.npm-cache
 
 .vscode/*
 .claude/*
+
+/paper

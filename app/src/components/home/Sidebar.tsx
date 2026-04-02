@@ -62,7 +62,7 @@ export default function Sidebar({
               <div
                 key={item.id}
                 onMouseDown={onConversationMouseDown}
-                className={`conversation-ripple-container flex w-full items-center rounded-lg border text-sm transition-colors transition-transform duration-150 active:scale-[0.98] ${
+                className={`conversation-ripple-container flex w-full items-center rounded-lg border text-sm  transition-transform duration-150 active:scale-[0.98] ${
                   isActive ? "bg-[#EAEAEA]" : "border-transparent hover:bg-[#EFEFEF]"
                 }`}
               >

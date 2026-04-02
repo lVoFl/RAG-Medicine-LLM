@@ -27,7 +27,7 @@ export default function HomePage() {
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [activeConversationMessages.length, isSending]);
+  }, [activeConversationMessages, isSending]);
 
   const handleLogout = () => {
     localStorage.removeItem("token");

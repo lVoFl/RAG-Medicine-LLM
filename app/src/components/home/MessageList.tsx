@@ -3,6 +3,7 @@ import { Button, Card, CardBody } from "@heroui/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ConversationMessage } from "../../types/chat";
+import type { RagDoc } from "../../types/conservation";
 
 type MessageListProps = {
   messages: ConversationMessage[];
@@ -20,7 +21,41 @@ function normalizeMarkdown(input: string): string {
   return unescapedNewline.replace(/(^|\n)(\s{0,3}#{1,6})([^\s#])/g, "$1$2 $3");
 }
 
+function normalizeRagDocs(raw: unknown): RagDoc[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const source = typeof item.source === "string" ? item.source : "";
+      const headings = typeof item.headings === "string" ? item.headings : "";
+      const content = typeof item.content === "string" ? item.content : "";
+      if (!source && !headings && !content) return null;
+      return {
+        ...item,
+        source,
+        headings,
+        content,
+      } as RagDoc;
+    })
+    .filter(Boolean) as RagDoc[];
+}
+
+function getRagDocsFromMessage(message: ConversationMessage): RagDoc[] {
+  const docsFromAttachments = normalizeRagDocs(message?.content?.attachments);
+  if (docsFromAttachments.length) return docsFromAttachments;
+
+  const docsFromContentField = normalizeRagDocs((message?.content as { retrieved_docs?: unknown[] })?.retrieved_docs);
+  if (docsFromContentField.length) return docsFromContentField;
+
+  return normalizeRagDocs((message as { retrieved_docs?: unknown[] })?.retrieved_docs);
+}
+
 export default function MessageList({ messages, isSending, messageEndRef, onSuggestionClick }: MessageListProps) {
+  const lastMessage = messages.length ? messages[messages.length - 1] : null;
+  const lastAssistantText =
+    lastMessage?.role === "assistant" ? String(lastMessage?.content?.text ?? "").trim() : "";
+  const showThinking = isSending && !lastAssistantText;
+
   return (
     <section className="mx-auto w-full max-w-4xl flex-1 px-4 py-6 md:px-6">
       {!messages.length ? (
@@ -45,6 +80,10 @@ export default function MessageList({ messages, isSending, messageEndRef, onSugg
           {messages.map((message, index) => {
             const isUser = message.role === "user";
             const markdownText = normalizeMarkdown(String(message?.content?.text ?? ""));
+            const ragDocs = isUser ? [] : getRagDocsFromMessage(message);
+            if (!isUser && isSending && !markdownText.trim()) {
+              return null;
+            }
             const key = message.id ?? `${message.role}-${index}`;
             return (
               <div key={key} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
@@ -93,12 +132,28 @@ export default function MessageList({ messages, isSending, messageEndRef, onSugg
                     >
                       {markdownText}
                     </ReactMarkdown>
+                    {!isUser && ragDocs.length ? (
+                      <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                          RAG 检索资料
+                        </p>
+                        <div className="mt-2 space-y-2">
+                          {ragDocs.map((doc, docIndex) => (
+                            <div key={`${doc.chunk_id ?? doc.source ?? "doc"}-${docIndex}`} className="rounded-md border border-emerald-100 bg-white p-2">
+                              <p className="text-xs font-medium text-emerald-700">
+                                [{docIndex + 1}] {doc.headings || doc.source || "未命名资料"}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </CardBody>
                 </Card>
               </div>
             );
           })}
-          {isSending ? (
+          {showThinking ? (
             <div className="flex justify-start">
               <Card shadow="none" className="border border-slate-200 bg-white">
                 <CardBody className="px-4 py-3 text-sm text-slate-500">正在思考...</CardBody>
