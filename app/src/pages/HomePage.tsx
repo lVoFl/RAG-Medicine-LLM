@@ -11,6 +11,7 @@ export default function HomePage() {
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const {
     isSending,
@@ -28,6 +29,26 @@ export default function HomePage() {
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [activeConversationMessages, isSending]);
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setIsAdmin(false);
+      return;
+    }
+    const jwt = token.startsWith("Bearer ") ? token.slice(7) : token;
+    const parts = jwt.split(".");
+    if (parts.length < 2) {
+      setIsAdmin(false);
+      return;
+    }
+    try {
+      const payload = JSON.parse(atob(parts[1]));
+      setIsAdmin(Boolean(payload?.isAdmin));
+    } catch {
+      setIsAdmin(false);
+    }
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -77,6 +98,16 @@ export default function HomePage() {
             </Button>
             <span className="text-sm font-semibold">Chat Assistant</span>
           </div>
+          {isAdmin ? (
+            <Button
+              size="sm"
+              variant="flat"
+              color="primary"
+              onPress={() => navigate("/admin/knowledge")}
+            >
+              知识库管理
+            </Button>
+          ) : null}
         </header>
 
         <div className="flex min-h-0 flex-1 flex-col">

@@ -9,6 +9,7 @@ import authRouter from "./routes/auth.js";
 import conversationsRouter from "./routes/conversations.js";
 import messagesRouter from "./routes/messages.js";
 import modelRouter from "./routes/model.js";
+import knowledgeRouter from "./routes/knowledge.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 
 const app = express();
@@ -27,6 +28,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/conversations", conversationsRouter);
 app.use("/api/conversations", messagesRouter);
 app.use("/api/model", modelRouter);
+app.use("/api/knowledge", knowledgeRouter);
 
 app.use(errorHandler);
 

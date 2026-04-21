@@ -26,6 +26,7 @@ try {
       id SERIAL PRIMARY KEY,
       username VARCHAR(50) NOT NULL UNIQUE,
       email VARCHAR(255),
+      is_admin BOOLEAN NOT NULL DEFAULT FALSE,
       password_hash VARCHAR(255) NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
@@ -33,6 +34,10 @@ try {
   await pool.query(`
     ALTER TABLE users
     ADD COLUMN IF NOT EXISTS email VARCHAR(255)
+  `);
+  await pool.query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE
   `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS conversations (
@@ -76,6 +81,27 @@ try {
     )
   `);
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS medical_documents (
+      id BIGSERIAL PRIMARY KEY,
+      title VARCHAR(255) NOT NULL,
+      category VARCHAR(100),
+      summary TEXT,
+      content TEXT NOT NULL,
+      source VARCHAR(255),
+      version VARCHAR(50),
+      tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+      updated_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      is_deleted BOOLEAN NOT NULL DEFAULT FALSE
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_medical_documents_updated_at
+    ON medical_documents(updated_at DESC)
+    WHERE is_deleted = FALSE
+  `);
+  await pool.query(`
     DO $$
     BEGIN
       IF EXISTS (
@@ -110,6 +136,15 @@ try {
   await pool.query(`
     CREATE TRIGGER trg_conversations_updated_at
     BEFORE UPDATE ON conversations
+    FOR EACH ROW
+    EXECUTE FUNCTION set_updated_at()
+  `);
+  await pool.query(`
+    DROP TRIGGER IF EXISTS trg_medical_documents_updated_at ON medical_documents
+  `);
+  await pool.query(`
+    CREATE TRIGGER trg_medical_documents_updated_at
+    BEFORE UPDATE ON medical_documents
     FOR EACH ROW
     EXECUTE FUNCTION set_updated_at()
   `);

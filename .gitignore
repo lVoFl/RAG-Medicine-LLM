@@ -19,6 +19,7 @@ app/.npm-cache
 /database/embeddings
 /database/faiss_index
 /database/faiss_index.zip
+/database/processed_mineru_chunks
 
 .vscode/*
 .claude/*
