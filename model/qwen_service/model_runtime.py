@@ -99,6 +99,11 @@ class ModelRuntime:
             )
         print("Model runtime is ready.")
 
+    def reload_rag_index(self):
+        if not self.rag_runtime:
+            raise RuntimeError("RAG is not enabled")
+        self.rag_runtime.reload_index()
+
     def _log(self, msg: str):
         if self.args.debug_log:
             print(f"[Model] {msg}")

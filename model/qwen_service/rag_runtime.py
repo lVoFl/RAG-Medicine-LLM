@@ -51,18 +51,43 @@ class RAGRuntime:
             ignore_patterns=["*.DS_Store", "imgs/*"],
         )
         self.reranker = FlagReranker(reranker_dir, use_fp16=True)
+        self.index = None
+        self.chunks = []
+        self.chunk_ids = np.array([], dtype="int64")
+        self.id_to_pos: dict[int, int] = {}
+        self.bm25_state = None
+        self.reload_index()
+        print("RAG runtime is ready.")
 
+    def reload_index(self):
         index_path = self.index_dir / "index.faiss"
         chunks_path = self.index_dir / "chunks.json"
         print(f"Loading FAISS index from: {index_path}")
-        self.index = faiss.read_index(str(index_path))
+        index = faiss.read_index(str(index_path))
         with open(chunks_path, encoding="utf-8") as f:
-            self.chunks = json.load(f)
-        print(f"Loaded chunks: {len(self.chunks)}")
-
+            chunks = json.load(f)
+        chunk_ids_path = self.index_dir / "chunk_ids.npy"
+        if chunk_ids_path.exists():
+            chunk_ids = np.load(chunk_ids_path).astype("int64")
+            if len(chunk_ids) != len(chunks):
+                raise ValueError(
+                    f"Mismatch: chunk_ids={len(chunk_ids)} vs chunks={len(chunks)} "
+                    f"at {chunk_ids_path}"
+                )
+        else:
+            # Backward compatibility for old index layout.
+            chunk_ids = np.arange(len(chunks), dtype="int64")
+        id_to_pos = {int(fid): i for i, fid in enumerate(chunk_ids.tolist())}
+        print(f"Loaded chunks: {len(chunks)}")
         print("Building BM25 state ...")
-        self.bm25_state = build_bm25_index(self.chunks)
-        print("RAG runtime is ready.")
+        bm25_state = build_bm25_index(chunks)
+
+        with self.lock:
+            self.index = index
+            self.chunks = chunks
+            self.chunk_ids = chunk_ids
+            self.id_to_pos = id_to_pos
+            self.bm25_state = bm25_state
 
     def _log(self, msg: str):
         if self.debug_log:
@@ -85,34 +110,45 @@ class RAGRuntime:
         dense_scores, dense_indices = self.index.search(query_vec, candidate_k)
         sparse_scores, sparse_indices = bm25_search(query, self.bm25_state, candidate_k)
 
+        # Always fuse by faiss_id, not positional offsets.
         fused: dict[int, dict] = {}
         for rank, (idx, score) in enumerate(
             zip(dense_indices[0].tolist(), dense_scores[0].tolist()), start=1
         ):
             if idx < 0:
                 continue
-            fused.setdefault(idx, {"dense_score": None, "bm25_score": None, "rrf": 0.0})
-            fused[idx]["dense_score"] = float(score)
-            fused[idx]["rrf"] += 1.0 / (rrf_k + rank)
+            faiss_id = int(idx)
+            if faiss_id not in self.id_to_pos:
+                continue
+            fused.setdefault(faiss_id, {"dense_score": None, "bm25_score": None, "rrf": 0.0})
+            fused[faiss_id]["dense_score"] = float(score)
+            fused[faiss_id]["rrf"] += 1.0 / (rrf_k + rank)
 
         for rank, (idx, score) in enumerate(
             zip(sparse_indices.tolist(), sparse_scores.tolist()), start=1
         ):
-            fused.setdefault(idx, {"dense_score": None, "bm25_score": None, "rrf": 0.0})
-            fused[idx]["bm25_score"] = float(score)
-            fused[idx]["rrf"] += 1.0 / (rrf_k + rank)
+            pos = int(idx)
+            faiss_id = int(self.chunk_ids[pos])
+            fused.setdefault(faiss_id, {"dense_score": None, "bm25_score": None, "rrf": 0.0})
+            fused[faiss_id]["bm25_score"] = float(score)
+            fused[faiss_id]["rrf"] += 1.0 / (rrf_k + rank)
 
         final = sorted(fused.items(), key=lambda item: item[1]["rrf"], reverse=True)[:top_k]
         results = []
-        for rank, (idx, fusion_item) in enumerate(final, start=1):
-            chunk = self.chunks[idx]
+        for rank, (faiss_id, fusion_item) in enumerate(final, start=1):
+            pos = self.id_to_pos.get(int(faiss_id))
+            if pos is None:
+                continue
+            chunk = self.chunks[pos]
             results.append(
                 {
                     "rank": rank,
                     "rrf_score": float(fusion_item["rrf"]),
                     "dense_score": fusion_item["dense_score"],
                     "bm25_score": fusion_item["bm25_score"],
-                    "chunk_id": chunk.get("chunk_id", idx),
+                    # chunk_id is source metadata and may be non-unique; faiss_id is unique.
+                    "faiss_id": int(faiss_id),
+                    "chunk_id": chunk.get("chunk_id"),
                     "source": chunk.get("source", ""),
                     "headings": chunk.get("headings", ""),
                     "content": chunk.get("content", ""),

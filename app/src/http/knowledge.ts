@@ -3,6 +3,7 @@ import type {
   KnowledgeListResponse,
   MedicalDocument,
   MedicalDocumentPayload,
+  UploadTextPayload,
 } from "../types/knowledge";
 
 const knowledgeApi = {
@@ -20,6 +21,22 @@ const knowledgeApi = {
   },
   remove(id: string | number) {
     return request.delete(`/api/knowledge/documents/${id}`);
+  },
+  getIndexStatus() {
+    return request.get<{
+      status: string;
+      last_reindexed_at?: string | null;
+      last_error?: string | null;
+      updated_at?: string | null;
+    }>("/api/knowledge/index-status");
+  },
+  reindex() {
+    return request.post<{ ok: boolean }>("/api/knowledge/reindex");
+  },
+  uploadText(data: UploadTextPayload) {
+    return request.post<{ ok: boolean; document: MedicalDocument }>("/api/knowledge/upload-text", data, {
+      timeout: 600000,
+    });
   },
 };
 

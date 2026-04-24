@@ -85,16 +85,50 @@ try {
       id BIGSERIAL PRIMARY KEY,
       title VARCHAR(255) NOT NULL,
       category VARCHAR(100),
-      summary TEXT,
-      content TEXT NOT NULL,
       source VARCHAR(255),
       version VARCHAR(50),
       tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+      ingest_key VARCHAR(64),
+      ingest_source VARCHAR(32) NOT NULL DEFAULT 'manual',
       updated_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW(),
       is_deleted BOOLEAN NOT NULL DEFAULT FALSE
     )
+  `);
+  await pool.query(`
+    ALTER TABLE medical_documents
+    ADD COLUMN IF NOT EXISTS ingest_key VARCHAR(64)
+  `);
+  await pool.query(`
+    ALTER TABLE medical_documents
+    ADD COLUMN IF NOT EXISTS ingest_source VARCHAR(32) NOT NULL DEFAULT 'manual'
+  `);
+  await pool.query(`
+    ALTER TABLE medical_documents
+    DROP COLUMN IF EXISTS summary
+  `);
+  await pool.query(`
+    ALTER TABLE medical_documents
+    DROP COLUMN IF EXISTS content
+  `);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_medical_documents_ingest_key
+    ON medical_documents(ingest_key)
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS knowledge_index_meta (
+      id SMALLINT PRIMARY KEY DEFAULT 1,
+      status VARCHAR(20) NOT NULL DEFAULT 'dirty',
+      last_reindexed_at TIMESTAMPTZ,
+      last_error TEXT,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    INSERT INTO knowledge_index_meta (id, status)
+    VALUES (1, 'dirty')
+    ON CONFLICT (id) DO NOTHING
   `);
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_medical_documents_updated_at
@@ -145,6 +179,15 @@ try {
   await pool.query(`
     CREATE TRIGGER trg_medical_documents_updated_at
     BEFORE UPDATE ON medical_documents
+    FOR EACH ROW
+    EXECUTE FUNCTION set_updated_at()
+  `);
+  await pool.query(`
+    DROP TRIGGER IF EXISTS trg_knowledge_index_meta_updated_at ON knowledge_index_meta
+  `);
+  await pool.query(`
+    CREATE TRIGGER trg_knowledge_index_meta_updated_at
+    BEFORE UPDATE ON knowledge_index_meta
     FOR EACH ROW
     EXECUTE FUNCTION set_updated_at()
   `);

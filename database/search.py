@@ -130,6 +130,8 @@ def hybrid_recall(
     model,
     index,
     chunks: list,
+    chunk_ids: np.ndarray,
+    id_to_pos: dict[int, int],
     bm25_state: dict,
     top_k: int = 50,
     candidate_k: int = 50,
@@ -142,35 +144,46 @@ def hybrid_recall(
     sparse_scores, sparse_indices = bm25_search(query, bm25_state, candidate_k)
 
     # Reciprocal Rank Fusion to merge dense/sparse retrieval robustly.
+    # Always fuse by faiss_id, not by positional offset.
     fused: dict[int, dict] = {}
     for rank, (idx, score) in enumerate(
         zip(dense_indices[0].tolist(), dense_scores[0].tolist()), start=1
     ):
         if idx < 0:
             continue
-        fused.setdefault(idx, {"dense_score": None, "bm25_score": None, "rrf": 0.0})
-        fused[idx]["dense_score"] = float(score)
-        fused[idx]["rrf"] += 1.0 / (rrf_k + rank)
+        faiss_id = int(idx)
+        if faiss_id not in id_to_pos:
+            continue
+        fused.setdefault(faiss_id, {"dense_score": None, "bm25_score": None, "rrf": 0.0})
+        fused[faiss_id]["dense_score"] = float(score)
+        fused[faiss_id]["rrf"] += 1.0 / (rrf_k + rank)
 
     for rank, (idx, score) in enumerate(
         zip(sparse_indices.tolist(), sparse_scores.tolist()), start=1
     ):
-        fused.setdefault(idx, {"dense_score": None, "bm25_score": None, "rrf": 0.0})
-        fused[idx]["bm25_score"] = float(score)
-        fused[idx]["rrf"] += 1.0 / (rrf_k + rank)
+        pos = int(idx)
+        faiss_id = int(chunk_ids[pos])
+        fused.setdefault(faiss_id, {"dense_score": None, "bm25_score": None, "rrf": 0.0})
+        fused[faiss_id]["bm25_score"] = float(score)
+        fused[faiss_id]["rrf"] += 1.0 / (rrf_k + rank)
 
     final = sorted(fused.items(), key=lambda item: item[1]["rrf"], reverse=True)[:top_k]
 
     results = []
-    for rank, (idx, fusion_item) in enumerate(final, start=1):
-        chunk = chunks[idx]
+    for rank, (faiss_id, fusion_item) in enumerate(final, start=1):
+        pos = id_to_pos.get(int(faiss_id))
+        if pos is None:
+            continue
+        chunk = chunks[pos]
         results.append(
             {
                 "rank": rank,
                 "rrf_score": float(fusion_item["rrf"]),
                 "dense_score": fusion_item["dense_score"],
                 "bm25_score": fusion_item["bm25_score"],
-                "chunk_id": chunk.get("chunk_id", idx),
+                # chunk_id is source metadata and may be non-unique; use faiss_id as unique key.
+                "faiss_id": int(faiss_id),
+                "chunk_id": chunk.get("chunk_id"),
                 "source": chunk.get("source", ""),
                 "headings": chunk.get("headings", ""),
                 "content": chunk.get("content", ""),
@@ -238,6 +251,17 @@ def main():
     index = faiss.read_index(str(INDEX_DIR / "index.faiss"))
     with open(INDEX_DIR / "chunks.json", encoding="utf-8") as f:
         chunks = json.load(f)
+    chunk_ids_path = INDEX_DIR / "chunk_ids.npy"
+    if chunk_ids_path.exists():
+        chunk_ids = np.load(chunk_ids_path).astype("int64")
+        if len(chunk_ids) != len(chunks):
+            raise ValueError(
+                f"Mismatch: chunk_ids={len(chunk_ids)} vs chunks={len(chunks)} at {chunk_ids_path}"
+            )
+    else:
+        # Backward compatibility for old indexes without explicit id mapping.
+        chunk_ids = np.arange(len(chunks), dtype="int64")
+    id_to_pos = {int(fid): i for i, fid in enumerate(chunk_ids.tolist())}
     print(f"  index.ntotal = {index.ntotal}, chunks = {len(chunks)}\n")
 
     print("Building BM25 state ...")
@@ -251,6 +275,8 @@ def main():
             model,
             index,
             chunks,
+            chunk_ids,
+            id_to_pos,
             bm25_state,
             top_k=args.rerank_top_n,
             candidate_k=args.candidate_k,
@@ -262,7 +288,7 @@ def main():
             print(
                 f"[{r['rank']}] rerank={r['rerank_score']:.4f} rrf={r['rrf_score']:.4f} "
                 f"dense={r['dense_score']} bm25={r['bm25_score']} "
-                f"chunk_id={r['chunk_id']}"
+                f"faiss_id={r['faiss_id']} chunk_id={r['chunk_id']}"
             )
             print(f"    来源: {r['source']}")
             print(f"    标题: {r['headings']}")

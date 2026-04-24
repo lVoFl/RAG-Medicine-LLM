@@ -102,5 +102,13 @@ def create_app(runtime: ModelRuntime) -> Flask:
         response.headers["X-Accel-Buffering"] = "no"
         return response
 
+    @app.post("/rag/reload")
+    def rag_reload():
+        try:
+            runtime.reload_rag_index()
+            return jsonify({"ok": True})
+        except Exception as exc:
+            return jsonify({"error": f"rag reload failed: {exc}"}), 500
+
     return app
 

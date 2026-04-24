@@ -14,7 +14,12 @@ type MessageListProps = {
   onSuggestionClick: (tip: string) => void;
 };
 
-const SUGGESTIONS = ["帮我写一个 React 登录页", "解释下 JWT 登录流程", "生成一个课程学习计划", "优化这段 SQL 性能"];
+const SUGGESTIONS = [
+  "妊娠期糖尿病的血糖控制目标是什么？",
+  "高血压危象的急诊处理流程有哪些关键步骤？",
+  "2 型糖尿病患者如何制定饮食与运动计划？",
+  "请总结糖尿病酮症酸中毒的诊断要点与处理原则",
+];
 
 function normalizeMarkdown(input: string): string {
   const text = (input || "").replace(/\r\n?/g, "\n");
@@ -121,7 +126,7 @@ export default function MessageList({ messages, isSending, messageEndRef, onSugg
       {!messages.length ? (
         <div className="mt-14 text-center">
           <h1 className="text-3xl font-semibold text-slate-800">今天想聊点什么？</h1>
-          <p className="mt-3 text-sm text-slate-500">我可以帮你写代码、改文案、解释概念或生成方案。</p>
+          <p className="mt-3 text-sm text-slate-500">我可以帮你解读医学知识、总结指南要点并生成健康管理建议。</p>
           <div className="mx-auto mt-6 grid max-w-2xl grid-cols-1 gap-3 md:grid-cols-2">
             {SUGGESTIONS.map((tip) => (
               <Button

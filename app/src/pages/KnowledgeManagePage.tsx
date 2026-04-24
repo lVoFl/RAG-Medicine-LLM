@@ -1,18 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { Button, Input, Textarea } from "@heroui/react";
 import knowledgeApi from "../http/knowledge";
-import type { MedicalDocument, MedicalDocumentPayload } from "../types/knowledge";
-
-const defaultForm: MedicalDocumentPayload = {
-  title: "",
-  category: "",
-  summary: "",
-  content: "",
-  source: "",
-  version: "",
-  tags: [],
-};
+import type { MedicalDocument } from "../types/knowledge";
 
 function parseTags(input: string) {
   return input
@@ -37,36 +27,50 @@ function isAdminFromToken() {
 
 export default function KnowledgeManagePage() {
   const navigate = useNavigate();
-  const [keyword, setKeyword] = useState("");
   const [documents, setDocuments] = useState<MedicalDocument[]>([]);
   const [selectedId, setSelectedId] = useState<string | number | null>(null);
-  const [form, setForm] = useState<MedicalDocumentPayload>(defaultForm);
-  const [tagsInput, setTagsInput] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+  const [indexStatus, setIndexStatus] = useState<{
+    status: string;
+    last_reindexed_at?: string | null;
+    last_error?: string | null;
+  } | null>(null);
 
-  const selectedDoc = useMemo(
-    () => documents.find((item) => String(item.id) === String(selectedId)) || null,
-    [documents, selectedId]
-  );
+  const [source, setSource] = useState("");
+  const [title, setTitle] = useState("");
+  const [tagsInput, setTagsInput] = useState("");
+  const [text, setText] = useState("");
 
-  const loadDocuments = async (nextKeyword = "") => {
+  const loadDocuments = async () => {
     setLoading(true);
-    setError("");
     try {
-      const { data } = await knowledgeApi.list({ keyword: nextKeyword, page: 1, pageSize: 20 });
-      setDocuments(Array.isArray(data.list) ? data.list : []);
-      if (!selectedId && data.list?.length) {
-        setSelectedId(data.list[0].id);
+      const { data } = await knowledgeApi.list({ page: 1, pageSize: 30 });
+      const list = Array.isArray(data.list) ? data.list : [];
+      setDocuments(list);
+      if (!selectedId) {
+        if (list.length) {
+          setSelectedId(list[0].id);
+          setIsCreating(false);
+        } else {
+          setIsCreating(true);
+        }
       }
-    } catch (err) {
-      const message =
-        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
-        "加载医学文档失败";
-      setError(message);
+    } catch {
+      // ignore
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadIndexStatus = async () => {
+    try {
+      const { data } = await knowledgeApi.getIndexStatus();
+      setIndexStatus(data);
+    } catch {
+      // ignore
     }
   };
 
@@ -76,117 +80,86 @@ export default function KnowledgeManagePage() {
       return;
     }
     void loadDocuments();
+    void loadIndexStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (!selectedDoc) {
-      setForm(defaultForm);
-      setTagsInput("");
+  const handleUploadText = async () => {
+    if (!isCreating) {
+      setError("请选择“新建”后再上传文本");
       return;
     }
-    setForm({
-      title: selectedDoc.title || "",
-      category: selectedDoc.category || "",
-      summary: selectedDoc.summary || "",
-      content: selectedDoc.content || "",
-      source: selectedDoc.source || "",
-      version: selectedDoc.version || "",
-      tags: Array.isArray(selectedDoc.tags) ? selectedDoc.tags : [],
-    });
-    setTagsInput(Array.isArray(selectedDoc.tags) ? selectedDoc.tags.join(", ") : "");
-  }, [selectedDoc]);
-
-  const handleCreate = () => {
-    setSelectedId(null);
-    setForm(defaultForm);
-    setTagsInput("");
-  };
-
-  const handleSave = async () => {
-    if (!form.title.trim() || !form.content.trim()) {
-      setError("请填写文档标题和正文内容");
+    if (!title.trim() || !source.trim() || !text.trim()) {
+      setError("请填写标题、来源和文本内容");
       return;
     }
-    setSaving(true);
+    setUploading(true);
     setError("");
-    const payload: MedicalDocumentPayload = {
-      ...form,
-      title: form.title.trim(),
-      content: form.content.trim(),
-      tags: parseTags(tagsInput),
-    };
-
     try {
-      if (selectedId) {
-        await knowledgeApi.update(selectedId, payload);
-      } else {
-        const { data } = await knowledgeApi.create(payload);
-        setSelectedId(data.id);
-      }
-      await loadDocuments(keyword);
+      await knowledgeApi.uploadText({
+        title: title.trim(),
+        source: source.trim(),
+        text: text.trim(),
+        tags: parseTags(tagsInput),
+      });
+      setText("");
+      await loadDocuments();
+      await loadIndexStatus();
+      setIsCreating(false);
     } catch (err) {
       const message =
         (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
-        "保存失败，请稍后重试";
+        "上传失败，请稍后重试";
       setError(message);
+      await loadIndexStatus();
     } finally {
-      setSaving(false);
+      setUploading(false);
     }
   };
 
-  const handleDelete = async () => {
-    if (!selectedId) return;
-    if (!window.confirm("确认删除该医学文档吗？")) return;
+  const handleSelectDocument = (doc: MedicalDocument) => {
+    setSelectedId(doc.id);
+    setIsCreating(false);
+    setSource(doc.source || "");
+    setTitle(doc.title || "");
+    setTagsInput(Array.isArray(doc.tags) ? doc.tags.join(", ") : "");
+    setText("");
+  };
 
-    try {
-      await knowledgeApi.remove(selectedId);
-      setSelectedId(null);
-      await loadDocuments(keyword);
-    } catch (err) {
-      const message =
-        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
-        "删除失败，请稍后重试";
-      setError(message);
-    }
+  const handleCreateNew = () => {
+    setSelectedId(null);
+    setIsCreating(true);
+    setTitle("");
+    setSource("");
+    setTagsInput("");
+    setText("");
   };
 
   return (
     <div className="flex min-h-screen bg-slate-50 text-slate-800">
       <aside className="w-[320px] border-r border-slate-200 bg-white p-4">
-        <div className="mb-3 text-lg font-semibold">知识库管理</div>
-        <p className="mb-4 text-xs text-slate-500">
-          管理员可在后台对医学文档进行增删改查，保障知识库时效性与专业性。
-        </p>
-        <div className="flex gap-2">
-          <Input
-            size="sm"
-            placeholder="搜索标题/分类"
-            value={keyword}
-            onValueChange={setKeyword}
-          />
-          <Button size="sm" onPress={() => void loadDocuments(keyword)} isLoading={loading}>
-            搜索
+        <div className="mb-3 flex items-center justify-between">
+          <div className="text-lg font-semibold">知识文档列表</div>
+          <Button size="sm" color="primary" variant="flat" onPress={handleCreateNew}>
+            新建
           </Button>
         </div>
-        <Button className="mt-3 w-full" variant="bordered" onPress={handleCreate}>
-          + 新建医学文档
-        </Button>
-
-        <div className="mt-4 space-y-2 overflow-y-auto">
+        <p className="mb-4 text-xs text-slate-500">以下为已登记到数据库的文档元信息（文档级）。</p>
+        <div className="space-y-2 overflow-y-auto">
           {documents.map((item) => (
             <button
               key={item.id}
               type="button"
+              onClick={() => handleSelectDocument(item)}
               className={`w-full rounded-lg border p-3 text-left text-sm transition ${
                 String(item.id) === String(selectedId)
                   ? "border-cyan-500 bg-cyan-50"
                   : "border-slate-200 bg-white hover:bg-slate-50"
               }`}
-              onClick={() => setSelectedId(item.id)}
             >
               <div className="line-clamp-1 font-medium">{item.title}</div>
               <div className="mt-1 text-xs text-slate-500">{item.category || "未分类"}</div>
+              <div className="mt-1 text-xs text-slate-400">{item.source || "-"}</div>
             </button>
           ))}
           {!documents.length && !loading ? (
@@ -200,74 +173,58 @@ export default function KnowledgeManagePage() {
       <main className="flex-1 p-6">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-semibold">{selectedId ? "编辑医学文档" : "新增医学文档"}</h1>
-            <p className="text-sm text-slate-500">支持文档标题、分类、摘要、正文、来源和版本信息维护。</p>
+            <h1 className="text-xl font-semibold">{isCreating ? "新建并上传到RAG" : "查看文档元信息"}</h1>
+            <p className="text-sm text-slate-500">
+              {"单一流程：文本分段、embedding、追加 FAISS、热重载。"}
+            </p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="bordered" onPress={() => navigate("/")}>
-              返回聊天
-            </Button>
-            <Button color="primary" onPress={() => void handleSave()} isLoading={saving}>
-              保存
-            </Button>
-            <Button color="danger" variant="flat" isDisabled={!selectedId} onPress={() => void handleDelete()}>
-              删除
-            </Button>
-          </div>
+          <Button variant="bordered" onPress={() => navigate("/")}>
+            返回聊天
+          </Button>
         </div>
+
+        {indexStatus ? (
+          <div className="mb-4 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
+            <p>索引状态：{indexStatus.status}</p>
+            <p>最近同步：{indexStatus.last_reindexed_at || "暂无"}</p>
+            {indexStatus.last_error ? <p className="text-red-600">最近错误：{indexStatus.last_error}</p> : null}
+          </div>
+        ) : null}
 
         {error ? <p className="mb-4 text-sm text-red-600">{error}</p> : null}
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <Input
-            label="文档标题"
-            value={form.title}
-            onValueChange={(value) => setForm((prev) => ({ ...prev, title: value }))}
-            isRequired
-          />
-          <Input
-            label="文档分类"
-            value={form.category || ""}
-            onValueChange={(value) => setForm((prev) => ({ ...prev, category: value }))}
-          />
-          <Input
-            label="文档来源"
-            value={form.source || ""}
-            onValueChange={(value) => setForm((prev) => ({ ...prev, source: value }))}
-          />
-          <Input
-            label="版本号"
-            value={form.version || ""}
-            onValueChange={(value) => setForm((prev) => ({ ...prev, version: value }))}
-          />
-        </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Input label="标题" value={title} onValueChange={setTitle} isRequired />
+            <Input label="文档来源（source）" value={source} onValueChange={setSource} isRequired />
+            <Input
+              label="标签（逗号分隔）"
+              placeholder="如：高血压, 指南, 药物"
+              value={tagsInput}
+              onValueChange={setTagsInput}
+            />
+          </div>
 
-        <div className="mt-4">
-          <Textarea
-            label="摘要"
-            minRows={2}
-            value={form.summary || ""}
-            onValueChange={(value) => setForm((prev) => ({ ...prev, summary: value }))}
-          />
-        </div>
-
-        <div className="mt-4">
-          <Input
-            label="标签（逗号分隔）"
-            placeholder="如：高血压, 指南, 药物"
-            value={tagsInput}
-            onValueChange={setTagsInput}
-          />
-        </div>
-
-        <div className="mt-4">
-          <Textarea
-            label="正文内容"
-            minRows={16}
-            value={form.content}
-            onValueChange={(value) => setForm((prev) => ({ ...prev, content: value }))}
-            isRequired
-          />
+          {isCreating ? (
+            <>
+              <div className="mt-4">
+                <Textarea
+                  label="文本内容"
+                  minRows={18}
+                  value={text}
+                  onValueChange={setText}
+                  isRequired
+                />
+              </div>
+              <div className="mt-4">
+                <Button color="primary" onPress={() => void handleUploadText()} isLoading={uploading}>
+                  上传文本并入RAG
+                </Button>
+              </div>
+            </>
+          ) : (
+            <p className="mt-4 text-sm text-slate-500">当前为已有文档。点击左上角“新建”可录入文本并追加到RAG。</p>
+          )}
         </div>
       </main>
     </div>
