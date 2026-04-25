@@ -361,6 +361,7 @@ class ChatClient:
         temperature: float,
         max_tokens: int,
         retries: int = 2,
+        extra_body: Optional[Dict[str, Any]] = None,
     ) -> str:
         use_responses_api = self._is_responses_api()
         if use_responses_api:
@@ -380,6 +381,8 @@ class ChatClient:
                 "max_tokens": max_tokens,
             }
             path = "/chat/completions"
+        if extra_body:
+            payload.update(extra_body)
         last_error: Optional[Exception] = None
         for attempt in range(retries + 1):
             try:
