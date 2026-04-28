@@ -1,0 +1,24 @@
+% !Mode:: "TeX:UTF-8"
+
+
+\begin{chineseabstract}
+
+随着大语言模型技术的发展，智能问答系统在医疗健康领域展现出良好的应用前景。然而，医学问答任务具有知识专业性强、事实准确性要求高、回答过程需要可追溯等特点，传统仅依赖参数记忆的生成方式容易产生知识幻觉和依据不明确等问题。针对高血压、高血糖和高血脂等“三高”慢性病场景中的问答需求，本文设计并实现了一种基于检索增强生成（Retrieval-Augmented Generation, RAG）的医学问答系统。
+
+本文围绕医学知识库构建、文本检索与系统实现三个方面展开研究。首先，对多源医学文本进行清洗、格式统一、语义切分与元数据组织，构建面向“三高”慢性病的医学知识库；其次，针对医学文本中术语密集、表达多样的特点，设计结合BM25关键词检索与向量检索的混合检索方法，并引入重排机制提升证据召回质量；最后，完成前后端分离的系统实现，构建业务服务、模型服务与知识库管理模块，实现多轮问答、流式输出、引用展示与知识更新等功能。
+
+研究结果表明，所设计系统能够较好地将外部医学知识引入生成过程，在保证交互效率的同时提高问答结果的准确性、稳定性与可解释性。本文的研究为检索增强生成技术在垂直医学问答场景中的应用提供了可行的实现方案，也为慢性病健康问答系统的设计与开发提供了参考。
+
+\chinesekeyword{慢性病医学问答；检索增强生成；混合检索；大语言模型；系统设计与实现}
+\end{chineseabstract}
+
+\begin{englishabstract}
+
+With the rapid development of large language models, intelligent question answering systems have shown broad application potential in the healthcare domain. However, medical question answering requires high factual accuracy, domain-specific knowledge, and traceable evidence. Traditional generation methods relying only on parametric memory are prone to hallucination and lack sufficient explainability. To address these issues in the scenario of chronic diseases known as the “three highs” including hypertension, hyperglycemia, and hyperlipidemia, this thesis designs and implements a medical question answering system based on Retrieval-Augmented Generation (RAG).
+
+This work focuses on three aspects: medical knowledge base construction, text retrieval, and system implementation. First, multi-source medical documents are processed through data cleaning, format unification, semantic chunking, and metadata organization to build a domain-specific knowledge base. Second, a hybrid retrieval method combining BM25 keyword retrieval and dense vector retrieval is designed, and a reranking mechanism is introduced to improve the quality of retrieved evidence. Third, a decoupled front-end and back-end system is implemented to support multi-turn dialogue, streaming response, citation presentation, and knowledge base update.
+
+The results show that the proposed system can effectively incorporate external medical knowledge into the generation process and improve the accuracy, stability, and interpretability of answers while maintaining interactive efficiency. This study provides a feasible solution for applying RAG technology to vertical medical question answering scenarios and offers practical reference for the design and development of chronic disease QA systems.
+
+\englishkeyword{Chronic Disease Medical QA; Retrieval-Augmented Generation; Hybrid Retrieval; Large Language Model; System Design and Implementation}
+\end{englishabstract}
