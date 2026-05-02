@@ -11,6 +11,7 @@
 \RequirePackage[font={onehalfspacing, small}, labelsep=space, skip=6pt, figurewithin=none, tablewithin=none]{caption} % 图表标题设置宏包
 \RequirePackage{array,tabularx} % 表格宏包
 \RequirePackage{booktabs} % 三线表宏包
+\RequirePackage{threeparttable} % 表格注释宏包
 \RequirePackage{makecell} % 设置封面表格部分横线的宽度
 \RequirePackage[absolute,overlay]{textpos} % 设置文本框位置的宏包
 \RequirePackage{setspace} % 行距宏包
