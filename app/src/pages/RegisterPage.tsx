@@ -108,16 +108,16 @@ export default function RegisterPage() {
             <section className="hidden bg-blue-900 p-8 text-white lg:flex lg:flex-col lg:justify-between xl:p-12">
               <div className="space-y-4">
                 <Chip color="primary" variant="flat" className="border border-white/25 bg-white/10 text-white">
-                  Create Account
+                  医学知识库系统
                 </Chip>
                 <h2 className="text-3xl font-semibold leading-tight xl:text-4xl">
-                  创建你的学习空间
+                  注册账号，开始使用医学智能问答平台
                 </h2>
                 <p className="max-w-md text-sm text-blue-100 xl:text-base">
-                  页面会在不同分辨率下自动切换布局，移动端聚焦输入，桌面端提供额外引导信息。
+                  通过医学知识检索、引用追踪和智能问答，帮助你高效获取专业、准确的健康信息。
                 </p>
               </div>
-              <p className="text-xs text-blue-200">Responsive auth experience built with HeroUI + Tailwind.</p>
+              <p className="text-xs text-blue-200">面向医学知识管理与 RAG 检索的统一入口。</p>
             </section>
 
             <section className="p-5 sm:p-8 lg:p-10 xl:p-12">

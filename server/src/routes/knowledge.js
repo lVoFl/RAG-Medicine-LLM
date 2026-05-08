@@ -9,8 +9,21 @@ import crypto from "crypto";
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "change-this-secret-in-production";
 const MODEL_SERVICE_URL = process.env.MODEL_SERVICE_URL || "http://127.0.0.1:8001";
-const PYTHON_BIN = process.env.PYTHON_BIN || "python";
+const PYTHON_BIN = process.env.PYTHON_BIN || "D:/Anaconda/envs/rag/python.exe";
+const EMBEDDING_DEVICE = process.env.EMBEDDING_DEVICE || "cuda";
+const EMBEDDING_USE_FP16 = process.env.EMBEDDING_USE_FP16 === "1";
+const KNOWLEDGE_APPEND_DEBUG = process.env.KNOWLEDGE_APPEND_DEBUG !== "0";
+const FAISS_SERVICE_URL = process.env.FAISS_SERVICE_URL || "";
+const FAISS_SERVICE_TIMEOUT_MS = Number(process.env.FAISS_SERVICE_TIMEOUT_MS) || 600000;
+const FAISS_SERVICE_RAG_RELOAD_URL = process.env.FAISS_SERVICE_RAG_RELOAD_URL || "";
+const FAISS_SERVICE_OWNS_RELOAD = process.env.FAISS_SERVICE_OWNS_RELOAD !== "0";
 let isReindexRunning = false;
+
+function tailText(value, maxChars = 2000) {
+  const text = String(value || "");
+  if (text.length <= maxChars) return text;
+  return text.slice(text.length - maxChars);
+}
 
 function getAuthUser(req) {
   const authHeader = req.headers.authorization || "";
@@ -87,7 +100,11 @@ async function runCommand(command, args, cwd) {
         `[knowledge] command failed (${elapsedMs}ms): ${command} ${args.join(" ")}\n` +
           `[stdout]\n${stdout}\n[stderr]\n${stderr}`
       );
-      reject(new Error(`${command} exited with code ${code}\n${stderr || stdout}`));
+      const error = new Error(`${command} exited with code ${code}\n${stderr || stdout}`);
+      error.stdout = stdout;
+      error.stderr = stderr;
+      error.exitCode = code;
+      reject(error);
     });
   });
 }
@@ -124,6 +141,64 @@ async function reloadRagIndex() {
   } catch (err) {
     if (err?.name === "AbortError") {
       throw new Error("model service reload timeout (15s)");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function callFaissAppendService(payload) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FAISS_SERVICE_TIMEOUT_MS);
+  const startedAt = Date.now();
+  try {
+    const response = await fetch(`${FAISS_SERVICE_URL}/faiss/append-text`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    const raw = await response.text();
+    console.log(
+      `[knowledge] faiss service response: status=${response.status} elapsed=${Date.now() - startedAt}ms body=${raw}`
+    );
+    if (!response.ok) {
+      throw new Error(`faiss service failed: status=${response.status}, body=${raw}`);
+    }
+    return raw;
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      throw new Error(`faiss service timeout (${FAISS_SERVICE_TIMEOUT_MS}ms)`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function callFaissDeleteService(payload) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FAISS_SERVICE_TIMEOUT_MS);
+  const startedAt = Date.now();
+  try {
+    const response = await fetch(`${FAISS_SERVICE_URL}/faiss/delete-source`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    const raw = await response.text();
+    console.log(
+      `[knowledge] faiss delete response: status=${response.status} elapsed=${Date.now() - startedAt}ms body=${raw}`
+    );
+    if (!response.ok) {
+      throw new Error(`faiss delete failed: status=${response.status}, body=${raw}`);
+    }
+    return raw;
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      throw new Error(`faiss delete timeout (${FAISS_SERVICE_TIMEOUT_MS}ms)`);
     }
     throw err;
   } finally {
@@ -278,9 +353,13 @@ router.post("/upload-text", async (req, res, next) => {
     return res.status(409).json({ error: "reindex/upload is already running" });
   }
 
+  const requestId = `kb_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+  let stage = "init";
   try {
     const user = ensureAdmin(req);
     isReindexRunning = true;
+    console.log(`[knowledge][${requestId}] upload-text started`);
+    stage = "mark_status_running";
     await pool.query(
       `
       UPDATE knowledge_index_meta
@@ -289,6 +368,7 @@ router.post("/upload-text", async (req, res, next) => {
       `
     );
 
+    stage = "validate_input";
     const { title, source, text, category, version, tags } = req.body || {};
     const normalizedTitle = String(title || "").trim();
     const normalizedSource = String(source || "").trim();
@@ -303,39 +383,62 @@ router.post("/upload-text", async (req, res, next) => {
       return res.status(400).json({ error: "text is required" });
     }
     console.log(
-      `[knowledge] upload-text request: title=${normalizedTitle} source=${normalizedSource} ` +
+      `[knowledge][${requestId}] upload-text request: title=${normalizedTitle} source=${normalizedSource} ` +
         `textLength=${normalizedText.length} category=${category || ""} version=${version || ""}`
     );
 
-    const databaseDir = path.resolve(process.cwd(), "../database");
-    const generatedDir = path.join(databaseDir, "generated");
-    await fs.mkdir(generatedDir, { recursive: true });
-    const tmpFileName = `upload_${Date.now()}.txt`;
-    const tmpTextPath = path.join(generatedDir, tmpFileName);
-    await fs.writeFile(tmpTextPath, normalizedText, "utf-8");
+    if (FAISS_SERVICE_URL) {
+      stage = "call_faiss_service";
+      await callFaissAppendService({
+        text: normalizedText,
+        source: normalizedSource,
+        headings: normalizedTitle,
+        category: category ? String(category).trim() : "",
+        version: version ? String(version).trim() : "",
+        rag_reload_url: FAISS_SERVICE_RAG_RELOAD_URL || undefined,
+      });
+    } else {
+      stage = "write_temp_file";
+      const databaseDir = path.resolve(process.cwd(), "../database");
+      const generatedDir = path.join(databaseDir, "generated");
+      await fs.mkdir(generatedDir, { recursive: true });
+      const tmpFileName = `upload_${Date.now()}.txt`;
+      const tmpTextPath = path.join(generatedDir, tmpFileName);
+      await fs.writeFile(tmpTextPath, normalizedText, "utf-8");
 
-    try {
-      await runCommand(
-        PYTHON_BIN,
-        [
-          "append_text_to_faiss.py",
-          "--text-file",
-          tmpTextPath,
-          "--source",
-          normalizedSource,
-          "--headings",
-          normalizedTitle,
-          "--category",
-          category ? String(category).trim() : "",
-          "--version",
-          version ? String(version).trim() : "",
-        ],
-        databaseDir
+      stage = "run_append_script";
+      let appendCmdResult = null;
+      try {
+        appendCmdResult = await runCommand(
+          PYTHON_BIN,
+          [
+            "append_text_to_faiss.py",
+            "--text-file",
+            tmpTextPath,
+            "--source",
+            normalizedSource,
+            "--headings",
+            normalizedTitle,
+            "--category",
+            category ? String(category).trim() : "",
+            "--version",
+            version ? String(version).trim() : "",
+            "--device",
+            EMBEDDING_DEVICE,
+            ...(EMBEDDING_USE_FP16 ? ["--use-fp16"] : []),
+            ...(KNOWLEDGE_APPEND_DEBUG ? ["--debug"] : []),
+          ],
+          databaseDir
+        );
+      } finally {
+        await fs.rm(tmpTextPath, { force: true }).catch(() => {});
+      }
+      console.log(
+        `[knowledge][${requestId}] append script done: elapsed=${appendCmdResult?.elapsedMs || 0}ms`
       );
-    } finally {
-      await fs.rm(tmpTextPath, { force: true }).catch(() => {});
     }
 
+    stage = "upsert_document_meta";
     const ingestKey = buildIngestKeyFromSource(normalizedSource);
     const upsertResult = await pool.query(
       `
@@ -370,7 +473,11 @@ router.post("/upload-text", async (req, res, next) => {
       ]
     );
 
-    await reloadRagIndex();
+    if (!FAISS_SERVICE_URL || !FAISS_SERVICE_OWNS_RELOAD) {
+      stage = "reload_rag";
+      await reloadRagIndex();
+    }
+    stage = "mark_status_synced";
     await pool.query(
       `
       UPDATE knowledge_index_meta
@@ -382,17 +489,38 @@ router.post("/upload-text", async (req, res, next) => {
       `
     );
 
-    res.status(201).json({ ok: true, document: upsertResult.rows[0] });
+    console.log(`[knowledge][${requestId}] upload-text success`);
+    res.status(201).json({ ok: true, request_id: requestId, document: upsertResult.rows[0] });
   } catch (err) {
+    const failedStage = stage || err?.stage || "unknown";
+    const stderrTail = tailText(err?.stderr || "");
+    const stdoutTail = tailText(err?.stdout || "");
+    const errorMessage = String(err?.message || err || "unknown error");
+    console.error(
+      `[knowledge][${requestId}] upload-text failed stage=${failedStage}\n` +
+        `[message] ${errorMessage}\n` +
+        `[stdout-tail]\n${stdoutTail}\n` +
+        `[stderr-tail]\n${stderrTail}`
+    );
     await pool.query(
       `
       UPDATE knowledge_index_meta
       SET status = 'error', last_error = $1
       WHERE id = 1
       `,
-      [String(err?.message || err || "unknown error")]
+      [
+        `upload failed(stage=${failedStage}): ${
+          String(err?.message || err || "unknown error").slice(0, 1000)
+        }`,
+      ]
     );
-    next(err);
+    res.status(500).json({
+      error: String(err?.message || err || "unknown error"),
+      request_id: requestId,
+      stage: failedStage,
+      stdout_tail: stdoutTail,
+      stderr_tail: stderrTail,
+    });
   } finally {
     isReindexRunning = false;
   }
@@ -465,13 +593,49 @@ router.patch("/documents/:id", async (req, res, next) => {
 
 // DELETE /api/knowledge/documents/:id
 router.delete("/documents/:id", async (req, res, next) => {
+  const requestId = `kb_del_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+  let stage = "init";
   try {
+    stage = "auth_and_validate";
     const id = Number(req.params.id);
     ensureAdmin(req);
     if (!Number.isInteger(id)) {
       return res.status(400).json({ error: "invalid document id" });
     }
 
+    stage = "load_document";
+    const documentResult = await pool.query(
+      `
+      SELECT id, source
+      FROM medical_documents
+      WHERE id = $1 AND is_deleted = FALSE
+      `,
+      [id]
+    );
+    const doc = documentResult.rows[0];
+    if (!doc) {
+      return res.status(404).json({ error: "document not found" });
+    }
+    const normalizedSource = String(doc.source || "").trim();
+    if (!normalizedSource) {
+      return res.status(400).json({ error: "document source is empty, cannot delete from FAISS" });
+    }
+
+    if (!FAISS_SERVICE_URL) {
+      return res.status(500).json({
+        error: "FAISS_SERVICE_URL is not configured",
+        request_id: requestId,
+        stage: "config_check",
+      });
+    }
+
+    stage = "delete_from_faiss_service";
+    await callFaissDeleteService({
+      source: normalizedSource,
+      backup: true,
+    });
+
+    stage = "soft_delete_meta";
     const result = await pool.query(
       `
       UPDATE medical_documents
@@ -485,10 +649,45 @@ router.delete("/documents/:id", async (req, res, next) => {
     if (!result.rows[0]) {
       return res.status(404).json({ error: "document not found" });
     }
-    await markKnowledgeIndexDirty();
+
+    stage = "mark_status_synced";
+    await pool.query(
+      `
+      UPDATE knowledge_index_meta
+      SET
+        status = 'synced',
+        last_reindexed_at = NOW(),
+        last_error = NULL
+      WHERE id = 1
+      `
+    );
     res.status(204).send();
   } catch (err) {
-    next(err);
+    const failedStage = stage || "unknown";
+    const stderrTail = tailText(err?.stderr || "");
+    const stdoutTail = tailText(err?.stdout || "");
+    const errorMessage = String(err?.message || err || "unknown error");
+    console.error(
+      `[knowledge][${requestId}] delete failed stage=${failedStage}\n` +
+        `[message] ${errorMessage}\n` +
+        `[stdout-tail]\n${stdoutTail}\n` +
+        `[stderr-tail]\n${stderrTail}`
+    );
+    await pool.query(
+      `
+      UPDATE knowledge_index_meta
+      SET status = 'error', last_error = $1
+      WHERE id = 1
+      `,
+      [`delete failed(stage=${failedStage}): ${errorMessage.slice(0, 1000)}`]
+    );
+    res.status(500).json({
+      error: errorMessage,
+      request_id: requestId,
+      stage: failedStage,
+      stdout_tail: stdoutTail,
+      stderr_tail: stderrTail,
+    });
   }
 });
 

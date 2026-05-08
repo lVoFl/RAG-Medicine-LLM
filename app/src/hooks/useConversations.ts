@@ -60,7 +60,17 @@ function normalizeConversation(raw: unknown, userId: string, index: number): Con
     id: String(id),
     title: typeof data.title === "string" && data.title.trim() ? data.title : "新对话",
     updatedAt,
+    messageCount:
+      typeof data.message_count === "number"
+        ? data.message_count
+        : typeof data.messageCount === "number"
+        ? data.messageCount
+        : 0,
   };
+}
+
+function isEmptyNewConversation(conversation: Conversation): boolean {
+  return conversation.title.trim() === "新对话" && conversation.messageCount === 0;
 }
 
 export function useConversations() {
@@ -100,6 +110,26 @@ export function useConversations() {
         .map((raw: unknown, index: number) => normalizeConversation(raw, userId, index))
         .filter(Boolean) as Conversation[];
 
+      const emptyNewConversations = list.filter(isEmptyNewConversation);
+      if (emptyNewConversations.length > 1) {
+        const [keep, ...toDelete] = emptyNewConversations.sort((a, b) => b.updatedAt - a.updatedAt);
+        void Promise.allSettled(toDelete.map((conversation) => api.Delete_Conversation(conversation.id)));
+        const deletedIds = new Set(toDelete.map((conversation) => conversation.id));
+        const dedupedList = list.filter((conversation) => !deletedIds.has(conversation.id) || conversation.id === keep.id);
+        setConversations(dedupedList);
+
+        if (!dedupedList.length) {
+          setActiveConversationId("");
+          setActiveConversationMessages([]);
+          return;
+        }
+
+        const nextActiveId = dedupedList[0].id;
+        setActiveConversationId(nextActiveId);
+        await getMessages(nextActiveId);
+        return;
+      }
+
       setConversations(list);
 
       if (!list.length) {
@@ -122,12 +152,19 @@ export function useConversations() {
 
   const createNewConversation = useCallback(async () => {
     try {
+      const existingEmptyConversation = sortedConversations.find(isEmptyNewConversation);
+      if (existingEmptyConversation) {
+        setActiveConversationId(existingEmptyConversation.id);
+        await getMessages(existingEmptyConversation.id);
+        return;
+      }
+
       await api.Create_Conversation({ title: "新对话" });
       await loadConversations();
     } catch (error) {
       console.error("创建对话失败:", error);
     }
-  }, [loadConversations]);
+  }, [getMessages, loadConversations, sortedConversations]);
 
   const handleSelectConversation = useCallback(
     (conversationId: string) => {
@@ -139,12 +176,16 @@ export function useConversations() {
 
   const updateConversationMessages = useCallback(
     (id: string, updater: (messages: Message[]) => Message[]) => {
-      setActiveConversationMessages((prev) => updater(prev as Message[]) as ConversationMessage[]);
+      setActiveConversationMessages((prev) => {
+        const next = updater(prev as Message[]) as ConversationMessage[];
+        return next;
+      });
 
       setConversations((prev) =>
         prev.map((conversation) => {
           if (conversation.id !== id) return conversation;
-          return { ...conversation };
+          const isFirstMessage = conversation.messageCount === 0;
+          return { ...conversation, messageCount: isFirstMessage ? 1 : conversation.messageCount };
         })
       );
     },
@@ -160,6 +201,23 @@ export function useConversations() {
 
       try {
         if (!text || !conversationId) return;
+
+        const activeConversation = conversations.find((conversation) => conversation.id === conversationId);
+        const shouldAutoRename =
+          activeConversation?.title.trim() === "新对话" && activeConversationMessages.length === 0;
+
+        if (shouldAutoRename) {
+          const updatedAt = Date.now();
+          setConversations((prev) =>
+            prev.map((conversation) =>
+              conversation.id === conversationId ? { ...conversation, title: text, updatedAt } : conversation
+            )
+          );
+
+          void api.Patch_Conservation({ title: text }, conversationId).catch((error) => {
+            console.error("自动更新会话标题失败:", error);
+          });
+        }
 
         const userMessage: Message = {
           role: "user",
@@ -250,7 +308,14 @@ export function useConversations() {
         setIsSending(false);
       }
     },
-    [activeConversationId, getMessages, inputValue, updateConversationMessages]
+    [
+      activeConversationId,
+      activeConversationMessages.length,
+      conversations,
+      getMessages,
+      inputValue,
+      updateConversationMessages,
+    ]
   );
 
   const renameConversation = useCallback(async (conversationId: string, nextTitle: string) => {
@@ -274,6 +339,58 @@ export function useConversations() {
     }
   }, []);
 
+  const deleteConversation = useCallback(
+    async (conversationId: string) => {
+      if (!conversationId) return false;
+
+      try {
+        await api.Delete_Conversation(conversationId);
+
+        const nextConversations = conversations.filter((conversation) => conversation.id !== conversationId);
+        setConversations(nextConversations);
+
+        if (activeConversationId !== conversationId) return true;
+
+        if (!nextConversations.length) {
+          setActiveConversationId("");
+          setActiveConversationMessages([]);
+          return true;
+        }
+
+        const nextActiveConversation = [...nextConversations].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+        setActiveConversationId(nextActiveConversation.id);
+        await getMessages(nextActiveConversation.id);
+        return true;
+      } catch (error) {
+        console.error("删除会话失败:", error);
+        return false;
+      }
+    },
+    [activeConversationId, conversations, getMessages]
+  );
+
+  useEffect(() => {
+    const cleanupEmptyConversations = () => {
+      const emptyIds = conversations.filter(isEmptyNewConversation).map((conversation) => conversation.id);
+      if (!emptyIds.length) return;
+      emptyIds.forEach((conversationId) => {
+        void api.Delete_Conversation(conversationId).catch((error) => {
+          console.error("退出时清理空会话失败:", error);
+        });
+      });
+    };
+
+    const handlePageHide = () => {
+      cleanupEmptyConversations();
+    };
+
+    window.addEventListener("pagehide", handlePageHide);
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+      cleanupEmptyConversations();
+    };
+  }, [conversations]);
+
   return {
     isSending,
     inputValue,
@@ -283,6 +400,7 @@ export function useConversations() {
     sortedConversations,
     createNewConversation,
     renameConversation,
+    deleteConversation,
     handleSelectConversation,
     submitMessage,
   };

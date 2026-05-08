@@ -29,6 +29,9 @@ const api = {
     Patch_Conservation(data: Update_Conservation, c_id: string){
         return request.patch(`/api/conversations/${c_id}`, data);
     },
+    Delete_Conversation(c_id: string) {
+        return request.delete(`/api/conversations/${c_id}`);
+    },
 
     Add_Message(data: Message, c_id: string){
         return request.post(`/api/conversations/${c_id}/messages`, data);

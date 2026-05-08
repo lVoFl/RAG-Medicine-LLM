@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { MouseEvent } from "react";
-import { Button, Input, Popover, PopoverContent, PopoverTrigger } from "@heroui/react";
+import { Button, Input, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, Popover, PopoverContent, PopoverTrigger } from "@heroui/react";
 import { Edit, Trash } from "../../icon/icon";
 import type { Conversation } from "../../types/chat";
 
@@ -11,6 +11,7 @@ type SidebarProps = {
   onCreateConversation: () => void;
   onSelectConversation: (id: string) => void;
   onRenameConversation: (id: string, title: string) => Promise<boolean>;
+  onDeleteConversation: (id: string) => Promise<boolean>;
   onLogout: () => void;
   onConversationMouseDown: (e: MouseEvent<HTMLDivElement>) => void;
 };
@@ -22,12 +23,15 @@ export default function Sidebar({
   onCreateConversation,
   onSelectConversation,
   onRenameConversation,
+  onDeleteConversation,
   onLogout,
   onConversationMouseDown,
 }: SidebarProps) {
   const [openPopoverId, setOpenPopoverId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [pendingDeleteConversation, setPendingDeleteConversation] = useState<Conversation | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const handleRename = async (conversationId: string) => {
     if (renamingId) return;
@@ -36,6 +40,17 @@ export default function Sidebar({
     setRenamingId(null);
     if (!ok) return;
     setOpenPopoverId(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!pendingDeleteConversation || deletingId) return;
+
+    const conversationId = pendingDeleteConversation.id;
+    setDeletingId(conversationId);
+    const ok = await onDeleteConversation(conversationId);
+    setDeletingId(null);
+    if (!ok) return;
+    setPendingDeleteConversation(null);
   };
 
   return (
@@ -62,13 +77,13 @@ export default function Sidebar({
               <div
                 key={item.id}
                 onMouseDown={onConversationMouseDown}
-                className={`conversation-ripple-container flex w-full items-center rounded-lg border text-sm  transition-transform duration-150 active:scale-[0.98] ${
+                className={`conversation-ripple-container flex w-full min-w-0 items-center rounded-lg border text-sm  transition-transform duration-150 active:scale-[0.98] ${
                   isActive ? "bg-[#EAEAEA]" : "border-transparent hover:bg-[#EFEFEF]"
                 }`}
               >
                 <div
                   onClick={() => onSelectConversation(item.id)}
-                  className="relative z-[1] flex-1 cursor-pointer bg-transparent px-3 py-2 text-left"
+                  className="relative z-[1] min-w-0 flex-1 cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap bg-transparent px-3 py-2 text-left"
                 >
                   {item.title}
                 </div>
@@ -139,6 +154,7 @@ export default function Sidebar({
                   isIconOnly
                   variant="light"
                   disableRipple
+                  onPress={() => setPendingDeleteConversation(item)}
                   className="relative z-[1] ml-auto border-0 bg-transparent text-[#838383] shadow-none outline-none ring-0 data-[hover=true]:border-0 data-[hover=true]:border-transparent data-[hover=true]:bg-transparent data-[hover=true]:text-[#2E2E2E] data-[hover=true]:shadow-none data-[pressed=true]:border-0 data-[pressed=true]:shadow-none data-[focus=true]:border-0 data-[focus=true]:outline-none data-[focus=true]:ring-0 data-[focus=true]:shadow-none data-[focus-visible=true]:border-0 data-[focus-visible=true]:outline-none data-[focus-visible=true]:ring-0"
                 >
                   <Trash />
@@ -147,6 +163,38 @@ export default function Sidebar({
             );
           })}
         </div>
+
+        <Modal
+          isOpen={Boolean(pendingDeleteConversation)}
+          onOpenChange={(isOpen) => {
+            if (!isOpen && !deletingId) setPendingDeleteConversation(null);
+          }}
+          placement="center"
+        >
+          <ModalContent>
+            <ModalHeader className="pb-2">确认删除会话</ModalHeader>
+            <ModalBody className="pt-0 text-sm text-slate-600">
+              <p>删除后将无法恢复。</p>
+              {pendingDeleteConversation ? <p>会话标题：{pendingDeleteConversation.title}</p> : null}
+            </ModalBody>
+            <ModalFooter>
+              <Button
+                variant="light"
+                onPress={() => setPendingDeleteConversation(null)}
+                isDisabled={Boolean(deletingId)}
+              >
+                取消
+              </Button>
+              <Button
+                color="danger"
+                onPress={() => void handleConfirmDelete()}
+                isLoading={Boolean(deletingId)}
+              >
+                确认删除
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
 
         <Button onClick={onLogout} variant="bordered" className="text-sm text-slate-600 hover:bg-white">
           退出登录

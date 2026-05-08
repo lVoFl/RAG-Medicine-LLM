@@ -90,16 +90,16 @@ export default function LoginPage() {
             <section className="hidden bg-slate-900 p-8 text-white lg:flex lg:flex-col lg:justify-between xl:p-12">
               <div className="space-y-4">
                 <Chip color="primary" variant="flat" className="border border-white/20 bg-white/10 text-white">
-                  HeroUI Auth
+                  医学知识库系统
                 </Chip>
                 <h2 className="text-3xl font-semibold leading-tight xl:text-4xl">
-                  欢迎回来，继续你的学习旅程
+                  欢迎回来，进入医学智能问答平台
                 </h2>
                 <p className="max-w-md text-sm text-slate-200 xl:text-base">
-                  自适应页面会根据分辨率自动调整布局，移动端专注表单，桌面端展示完整信息面板。
+                  登录后可基于医学知识库进行问答检索，查看回答引用来源，并持续追踪临床知识更新。
                 </p>
               </div>
-              <p className="text-xs text-slate-300">Secure login experience with HeroUI components.</p>
+              <p className="text-xs text-slate-300">RAG 驱动的医学知识检索与问答服务。</p>
             </section>
 
             <section className="p-5 sm:p-8 lg:p-10 xl:p-12">

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { MutableRefObject } from "react";
 import { Button, Card, CardBody } from "@heroui/react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -15,10 +15,26 @@ type MessageListProps = {
 };
 
 const SUGGESTIONS = [
-  "妊娠期糖尿病的血糖控制目标是什么？",
-  "高血压危象的急诊处理流程有哪些关键步骤？",
-  "2 型糖尿病患者如何制定饮食与运动计划？",
-  "请总结糖尿病酮症酸中毒的诊断要点与处理原则",
+  "高血压患者家庭自测血压的正确方法是什么？",
+  "高血糖人群一天三餐怎么搭配更稳血糖？",
+  "高血脂患者如何通过饮食降低甘油三酯？",
+  "三高人群每周运动频率和强度如何安排？",
+  "高血压合并糖尿病时降压目标值是多少？",
+  "空腹血糖和糖化血红蛋白分别说明什么？",
+  "总胆固醇、LDL、HDL、甘油三酯怎么解读？",
+  "高血压药物漏服一次该怎么处理？",
+  "二甲双胍常见副作用及应对方式有哪些？",
+  "他汀类药物需要长期吃吗，何时复查？",
+  "三高人群体重管理目标应该怎么定？",
+  "高盐饮食对血压影响有多大，如何控盐？",
+  "餐后血糖总是偏高，先从哪些方面调整？",
+  "血脂正常后能不能停药，有哪些风险？",
+  "三高患者如何做年度体检项目规划？",
+  "高血压伴头晕头痛，哪些情况需要急诊？",
+  "高血糖患者外出就餐如何选择食物？",
+  "高血脂合并脂肪肝的生活方式管理要点有哪些？",
+  "三高患者如何制定可执行的睡眠作息计划？",
+  "请给我一份三高人群的 30 天健康管理计划",
 ];
 
 function normalizeMarkdown(input: string): string {
@@ -116,6 +132,15 @@ function CitationPanel({ ragDocs }: CitationPanelProps) {
 }
 
 export default function MessageList({ messages, isSending, messageEndRef, onSuggestionClick }: MessageListProps) {
+  const randomSuggestions = useMemo(() => {
+    const shuffled = [...SUGGESTIONS];
+    for (let i = shuffled.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled.slice(0, 4);
+  }, []);
+
   const lastMessage = messages.length ? messages[messages.length - 1] : null;
   const lastAssistantText =
     lastMessage?.role === "assistant" ? String(lastMessage?.content?.text ?? "").trim() : "";
@@ -128,7 +153,7 @@ export default function MessageList({ messages, isSending, messageEndRef, onSugg
           <h1 className="text-3xl font-semibold text-slate-800">今天想聊点什么？</h1>
           <p className="mt-3 text-sm text-slate-500">我可以帮你解读医学知识、总结指南要点并生成健康管理建议。</p>
           <div className="mx-auto mt-6 grid max-w-2xl grid-cols-1 gap-3 md:grid-cols-2">
-            {SUGGESTIONS.map((tip) => (
+            {randomSuggestions.map((tip) => (
               <Button
                 key={tip}
                 onClick={() => onSuggestionClick(tip)}

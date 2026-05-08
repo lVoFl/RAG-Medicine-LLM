@@ -19,7 +19,6 @@ export interface MedicalDocumentPayload {
 }
 
 export interface UploadTextPayload {
-  title: string;
   source: string;
   text: string;
   tags?: string[];

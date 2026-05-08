@@ -22,6 +22,7 @@ export default function HomePage() {
     sortedConversations,
     createNewConversation,
     renameConversation,
+    deleteConversation,
     handleSelectConversation,
     submitMessage,
   } = useConversations();
@@ -81,6 +82,7 @@ export default function HomePage() {
         onCreateConversation={createNewConversation}
         onSelectConversation={handleSelectConversation}
         onRenameConversation={renameConversation}
+        onDeleteConversation={deleteConversation}
         onLogout={handleLogout}
         onConversationMouseDown={handleConversationRipple}
       />

@@ -40,7 +40,6 @@ export default function KnowledgeManagePage() {
   } | null>(null);
 
   const [source, setSource] = useState("");
-  const [title, setTitle] = useState("");
   const [tagsInput, setTagsInput] = useState("");
   const [text, setText] = useState("");
 
@@ -89,15 +88,14 @@ export default function KnowledgeManagePage() {
       setError("请选择“新建”后再上传文本");
       return;
     }
-    if (!title.trim() || !source.trim() || !text.trim()) {
-      setError("请填写标题、来源和文本内容");
+    if (!source.trim() || !text.trim()) {
+      setError("请填写来源和文本内容");
       return;
     }
     setUploading(true);
     setError("");
     try {
       await knowledgeApi.uploadText({
-        title: title.trim(),
         source: source.trim(),
         text: text.trim(),
         tags: parseTags(tagsInput),
@@ -107,10 +105,21 @@ export default function KnowledgeManagePage() {
       await loadIndexStatus();
       setIsCreating(false);
     } catch (err) {
-      const message =
-        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
-        "上传失败，请稍后重试";
-      setError(message);
+      const data = (err as {
+        response?: {
+          data?: {
+            error?: string;
+            stage?: string;
+            request_id?: string;
+            stderr_tail?: string;
+          };
+        };
+      })?.response?.data;
+      const message = data?.error || "上传失败，请稍后重试";
+      const stageLine = data?.stage ? `\n阶段: ${data.stage}` : "";
+      const requestLine = data?.request_id ? `\n请求ID: ${data.request_id}` : "";
+      const stderrLine = data?.stderr_tail ? `\n调试信息:\n${data.stderr_tail}` : "";
+      setError(`${message}${stageLine}${requestLine}${stderrLine}`);
       await loadIndexStatus();
     } finally {
       setUploading(false);
@@ -121,7 +130,6 @@ export default function KnowledgeManagePage() {
     setSelectedId(doc.id);
     setIsCreating(false);
     setSource(doc.source || "");
-    setTitle(doc.title || "");
     setTagsInput(Array.isArray(doc.tags) ? doc.tags.join(", ") : "");
     setText("");
   };
@@ -129,15 +137,56 @@ export default function KnowledgeManagePage() {
   const handleCreateNew = () => {
     setSelectedId(null);
     setIsCreating(true);
-    setTitle("");
     setSource("");
     setTagsInput("");
     setText("");
   };
 
+  const handleDeleteDocument = async (doc: MedicalDocument) => {
+    const id = doc.id;
+    if (id === undefined || id === null) return;
+    const sourceLabel = doc.source || "-";
+    const confirmed = window.confirm(`确认删除该文档并从FAISS中移除？\nsource: ${sourceLabel}`);
+    if (!confirmed) return;
+
+    setError("");
+    setUploading(true);
+    try {
+      await knowledgeApi.remove(id);
+      if (String(selectedId) === String(id)) {
+        setSelectedId(null);
+        setIsCreating(false);
+        setSource("");
+        setTagsInput("");
+        setText("");
+      }
+      await loadDocuments();
+      await loadIndexStatus();
+    } catch (err) {
+      const data = (err as {
+        response?: {
+          data?: {
+            error?: string;
+            stage?: string;
+            request_id?: string;
+            stderr_tail?: string;
+          };
+        };
+      })?.response?.data;
+      const message = data?.error || "删除失败，请稍后重试";
+      const stageLine = data?.stage ? `\n阶段: ${data.stage}` : "";
+      const requestLine = data?.request_id ? `\n请求ID: ${data.request_id}` : "";
+      const stderrLine = data?.stderr_tail ? `\n调试信息:\n${data.stderr_tail}` : "";
+      setError(`${message}${stageLine}${requestLine}${stderrLine}`);
+      await loadIndexStatus();
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
-    <div className="flex min-h-screen bg-slate-50 text-slate-800">
-      <aside className="w-[320px] border-r border-slate-200 bg-white p-4">
+    <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-800">
+      <aside className="flex h-full w-[320px] flex-col border-r border-slate-200 bg-white p-4">
         <div className="mb-3 flex items-center justify-between">
           <div className="text-lg font-semibold">知识文档列表</div>
           <Button size="sm" color="primary" variant="flat" onPress={handleCreateNew}>
@@ -145,22 +194,21 @@ export default function KnowledgeManagePage() {
           </Button>
         </div>
         <p className="mb-4 text-xs text-slate-500">以下为已登记到数据库的文档元信息（文档级）。</p>
-        <div className="space-y-2 overflow-y-auto">
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
           {documents.map((item) => (
-            <button
+            <div
               key={item.id}
-              type="button"
-              onClick={() => handleSelectDocument(item)}
               className={`w-full rounded-lg border p-3 text-left text-sm transition ${
                 String(item.id) === String(selectedId)
                   ? "border-cyan-500 bg-cyan-50"
                   : "border-slate-200 bg-white hover:bg-slate-50"
               }`}
             >
-              <div className="line-clamp-1 font-medium">{item.title}</div>
-              <div className="mt-1 text-xs text-slate-500">{item.category || "未分类"}</div>
-              <div className="mt-1 text-xs text-slate-400">{item.source || "-"}</div>
-            </button>
+              <button type="button" onClick={() => handleSelectDocument(item)} className="w-full text-left">
+                <div className="line-clamp-1 font-medium">{item.title}</div>
+                <div className="mt-1 text-xs text-slate-500">{item.category || "未分类"}</div>
+              </button>
+            </div>
           ))}
           {!documents.length && !loading ? (
             <div className="rounded-lg border border-dashed border-slate-300 p-3 text-xs text-slate-500">
@@ -170,7 +218,7 @@ export default function KnowledgeManagePage() {
         </div>
       </aside>
 
-      <main className="flex-1 p-6">
+      <main className="h-full flex-1 overflow-y-auto p-6">
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold">{isCreating ? "新建并上传到RAG" : "查看文档元信息"}</h1>
@@ -178,9 +226,26 @@ export default function KnowledgeManagePage() {
               {"单一流程：文本分段、embedding、追加 FAISS、热重载。"}
             </p>
           </div>
-          <Button variant="bordered" onPress={() => navigate("/")}>
-            返回聊天
-          </Button>
+          <div className="flex items-center gap-2">
+            {!isCreating && selectedId ? (
+              <Button
+                color="danger"
+                variant="light"
+                isLoading={uploading}
+                onPress={() => {
+                  const current = documents.find((doc) => String(doc.id) === String(selectedId));
+                  if (current) {
+                    void handleDeleteDocument(current);
+                  }
+                }}
+              >
+                删除当前文档
+              </Button>
+            ) : null}
+            <Button variant="bordered" onPress={() => navigate("/")}>
+              返回聊天
+            </Button>
+          </div>
         </div>
 
         {indexStatus ? (
@@ -191,11 +256,10 @@ export default function KnowledgeManagePage() {
           </div>
         ) : null}
 
-        {error ? <p className="mb-4 text-sm text-red-600">{error}</p> : null}
+        {error ? <p className="mb-4 whitespace-pre-wrap text-sm text-red-600">{error}</p> : null}
 
         <div className="rounded-lg border border-slate-200 bg-white p-4">
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <Input label="标题" value={title} onValueChange={setTitle} isRequired />
             <Input label="文档来源（source）" value={source} onValueChange={setSource} isRequired />
             <Input
               label="标签（逗号分隔）"
