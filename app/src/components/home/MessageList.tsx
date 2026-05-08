@@ -7,6 +7,8 @@ import remarkGfm from "remark-gfm";
 import type { ConversationMessage } from "../../types/chat";
 import type { RagDoc } from "../../types/conservation";
 
+const API_BASE_URL = "http://localhost:3000";
+
 type MessageListProps = {
   messages: ConversationMessage[];
   isSending: boolean;
@@ -121,6 +123,18 @@ function CitationPanel({ ragDocs }: CitationPanelProps) {
                 <li key={`${doc.chunk_id ?? doc.source ?? "doc"}-${docIndex}`} className="leading-6">
                   <span className="mr-2 text-slate-500">{docIndex + 1}.</span>
                   <span>{doc.source || "未知来源"}</span>
+                  {doc.source ? (
+                    <a
+                      href={`${API_BASE_URL}/api/knowledge/origin-files/preview?path=${encodeURIComponent(
+                        String(doc.source)
+                      )}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ml-2 text-xs text-emerald-700 underline"
+                    >
+                      预览
+                    </a>
+                  ) : null}
                 </li>
               ))}
             </ol>

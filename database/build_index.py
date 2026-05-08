@@ -61,11 +61,12 @@ def build_faiss_index(embeddings: np.ndarray, chunk_ids: np.ndarray) -> faiss.In
 
 
 def _build_chunk_ids(chunks: list[dict]) -> np.ndarray:
-    """Resolve per-chunk faiss ids.
+    """Resolve FAISS internal ids strictly from `faiss_id`.
 
-    Priority:
-    1) Existing chunk["faiss_id"] if provided
-    2) Fallback to current position index
+    Rules:
+    1) FAISS internal id is always `faiss_id`
+    2) `chunk_id` is metadata only (must never be used as internal id)
+    3) If `faiss_id` missing, assign by current position for determinism
     """
     ids = np.empty(len(chunks), dtype="int64")
     used_ids: set[int] = set()
@@ -86,10 +87,35 @@ def _build_chunk_ids(chunks: list[dict]) -> np.ndarray:
             raise ValueError(f"Duplicate faiss_id detected: {faiss_id}")
         used_ids.add(faiss_id)
         ids[i] = faiss_id
-        # Persist id in chunks.json for portability and easier debugging.
+        # Persist canonical id in chunks.json for portability and easier debugging.
         chunk["faiss_id"] = int(faiss_id)
 
     return ids
+
+
+def _validate_chunk_schema(chunks: list[dict]) -> None:
+    """Fail fast when chunks contain mixed/non-canonical structures."""
+    required = {"chunk_id", "source", "category", "headings", "content"}
+    bad_examples: list[str] = []
+    bad_count = 0
+
+    for i, chunk in enumerate(chunks):
+        if not isinstance(chunk, dict):
+            bad_count += 1
+            if len(bad_examples) < 3:
+                bad_examples.append(f"[{i}] non-dict item: {type(chunk).__name__}")
+            continue
+        missing = [k for k in required if k not in chunk]
+        if missing:
+            bad_count += 1
+            if len(bad_examples) < 3:
+                bad_examples.append(f"[{i}] missing={missing}, keys={sorted(chunk.keys())}")
+
+    if bad_count:
+        raise ValueError(
+            "Invalid chunk schema detected in embeddings/chunks.json. "
+            f"bad_items={bad_count}/{len(chunks)}. Examples: " + " | ".join(bad_examples)
+        )
 
 
 def _parse_env_file(env_path: Path) -> dict[str, str]:
@@ -147,9 +173,18 @@ def _normalize(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _chunk_source(chunk: dict) -> str:
+    """Read source from chunk JSON as the canonical DB source field."""
+    return _normalize(chunk.get("source")) or "未知来源"
+
+
+def _chunk_title(chunk: dict) -> str:
+    return chunk.get("title") or "未知"
+
+
 def _ingest_key(chunk: dict) -> str:
     # DB only keeps one record per source document, so source is the dedup basis.
-    source = _normalize(chunk.get("source")) or "未知来源"
+    source = _chunk_source(chunk)
     base = source
     return hashlib.sha1(base.encode("utf-8")).hexdigest()
 
@@ -159,18 +194,24 @@ def _aggregate_chunks(chunks: list[dict]) -> list[dict]:
     grouped: dict[str, dict] = {}
     for chunk in chunks:
         key = _ingest_key(chunk)
+        category = _normalize(chunk.get("category"))
         if key not in grouped:
-            source = _normalize(chunk.get("source")) or "未知来源"
+            source = _chunk_source(chunk)
+            title = _chunk_title(chunk)
             grouped[key] = {
                 "ingest_key": key,
-                "title": source,
-                "category": None,
+                "title": title,
+                "category": category or None,
                 "source": source,
                 "version": None,
+                "tag_set": set(),
             }
+        if category:
+            grouped[key]["tag_set"].add(category)
 
     docs: list[dict] = []
     for item in grouped.values():
+        tags = sorted(item["tag_set"]) if item["tag_set"] else []
         docs.append(
             {
                 "ingest_key": item["ingest_key"],
@@ -178,7 +219,7 @@ def _aggregate_chunks(chunks: list[dict]) -> list[dict]:
                 "category": item["category"],
                 "source": item["source"],
                 "version": item["version"],
-                "tags": [],
+                "tags": tags,
             }
         )
     return docs
@@ -250,27 +291,13 @@ def _sync_chunks_to_db(chunks: list[dict], server_dir: Path):
                     """
                 )
 
-                ingest_keys = [d["ingest_key"] for d in docs]
-                if ingest_keys:
-                    # Soft-delete stale records that were created by previous FAISS sync.
-                    cur.execute(
-                        """
-                        UPDATE medical_documents
-                        SET is_deleted = TRUE
-                        WHERE ingest_source = 'faiss_sync'
-                          AND (ingest_key IS NULL OR NOT (ingest_key = ANY(%s)))
-                        """,
-                        (ingest_keys,),
-                    )
-                else:
-                    # If no docs are present, mark all faiss_sync records as deleted.
-                    cur.execute(
-                        """
-                        UPDATE medical_documents
-                        SET is_deleted = TRUE
-                        WHERE ingest_source = 'faiss_sync'
-                        """
-                    )
+                # Full refresh mode: clear previous FAISS-synced rows before re-insert.
+                cur.execute(
+                    """
+                    DELETE FROM medical_documents
+                    WHERE ingest_source = 'faiss_sync'
+                    """
+                )
 
                 for item in docs:
                     # Upsert each aggregated doc row by ingest_key.
@@ -353,6 +380,7 @@ def main():
     with open(chunks_path, encoding="utf-8") as f:
         chunks = json.load(f)
     print(f"  total chunks: {len(chunks)}")
+    _validate_chunk_schema(chunks)
 
     assert len(chunks) == embeddings.shape[0], (
         # chunks.json and embeddings.npy are expected to be positionally aligned.

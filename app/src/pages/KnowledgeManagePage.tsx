@@ -4,6 +4,8 @@ import { Button, Input, Textarea } from "@heroui/react";
 import knowledgeApi from "../http/knowledge";
 import type { MedicalDocument } from "../types/knowledge";
 
+const API_BASE_URL = "http://localhost:3000";
+
 function parseTags(input: string) {
   return input
     .split(",")
@@ -27,6 +29,7 @@ function isAdminFromToken() {
 
 export default function KnowledgeManagePage() {
   const navigate = useNavigate();
+  const PAGE_SIZE = 30;
   const [documents, setDocuments] = useState<MedicalDocument[]>([]);
   const [selectedId, setSelectedId] = useState<string | number | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -42,13 +45,17 @@ export default function KnowledgeManagePage() {
   const [source, setSource] = useState("");
   const [tagsInput, setTagsInput] = useState("");
   const [text, setText] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
-  const loadDocuments = async () => {
+  const loadDocuments = async (targetPage = page) => {
     setLoading(true);
     try {
-      const { data } = await knowledgeApi.list({ page: 1, pageSize: 30 });
+      const { data } = await knowledgeApi.list({ page: targetPage, pageSize: PAGE_SIZE });
       const list = Array.isArray(data.list) ? data.list : [];
       setDocuments(list);
+      setPage(data.pagination?.page || targetPage);
+      setTotal(data.pagination?.total || 0);
       if (!selectedId) {
         if (list.length) {
           setSelectedId(list[0].id);
@@ -160,7 +167,7 @@ export default function KnowledgeManagePage() {
         setTagsInput("");
         setText("");
       }
-      await loadDocuments();
+      await loadDocuments(page);
       await loadIndexStatus();
     } catch (err) {
       const data = (err as {
@@ -184,6 +191,8 @@ export default function KnowledgeManagePage() {
     }
   };
 
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-800">
       <aside className="flex h-full w-[320px] flex-col border-r border-slate-200 bg-white p-4">
@@ -205,7 +214,7 @@ export default function KnowledgeManagePage() {
               }`}
             >
               <button type="button" onClick={() => handleSelectDocument(item)} className="w-full text-left">
-                <div className="line-clamp-1 font-medium">{item.title}</div>
+                <div className="line-clamp-1 font-medium">{ item.title || "-"}</div>
                 <div className="mt-1 text-xs text-slate-500">{item.category || "未分类"}</div>
               </button>
             </div>
@@ -215,6 +224,29 @@ export default function KnowledgeManagePage() {
               暂无文档
             </div>
           ) : null}
+        </div>
+        <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
+          <span>
+            第 {page}/{totalPages} 页 · 共 {total} 条
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="flat"
+              isDisabled={loading || page <= 1}
+              onPress={() => void loadDocuments(page - 1)}
+            >
+              上一页
+            </Button>
+            <Button
+              size="sm"
+              variant="flat"
+              isDisabled={loading || page >= totalPages}
+              onPress={() => void loadDocuments(page + 1)}
+            >
+              下一页
+            </Button>
+          </div>
         </div>
       </aside>
 
@@ -227,6 +259,24 @@ export default function KnowledgeManagePage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {!isCreating && selectedId ? (
+              <Button
+                variant="flat"
+                onPress={() => {
+                  const sourcePath = String(source || "").trim();
+                  if (!sourcePath) {
+                    setError("当前文档没有 source，无法预览原文件");
+                    return;
+                  }
+                  const previewUrl = `${API_BASE_URL}/api/knowledge/origin-files/preview?path=${encodeURIComponent(
+                    sourcePath
+                  )}`;
+                  window.open(previewUrl, "_blank", "noopener,noreferrer");
+                }}
+              >
+                预览原文件
+              </Button>
+            ) : null}
             {!isCreating && selectedId ? (
               <Button
                 color="danger"

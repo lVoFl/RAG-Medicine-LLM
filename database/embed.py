@@ -15,7 +15,8 @@ import numpy as np
 from FlagEmbedding import BGEM3FlagModel
 
 PROCESSED_DIRS = [
-    Path(__file__).parent / "processed_pdf",
+    Path(__file__).parent / "processed_md",
+    # Path(__file__).parent / "processed_pdf",
     Path(__file__).parent / "processed_txt",
 ]
 OUTPUT_DIR = Path(__file__).parent / "embeddings"
@@ -39,8 +40,28 @@ def load_all_chunks(processed_dir: Path) -> list[dict]:
             with open(path, encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, list) and data and isinstance(data[0], dict):
-                print(f"  Loaded {len(data):>4} chunks from {path.relative_to(processed_dir)}")
-                chunks.extend(data)
+                # Keep only canonical RAG chunks:
+                # chunk_id/source/category/headings/content
+                valid = [
+                    item
+                    for item in data
+                    if isinstance(item, dict)
+                    and "content" in item
+                    and "source" in item
+                    and "category" in item
+                    and "headings" in item
+                ]
+                if valid:
+                    print(
+                        f"  Loaded {len(valid):>4} chunks "
+                        f"(raw={len(data):>4}) from {path.relative_to(processed_dir)}"
+                    )
+                    chunks.extend(valid)
+                else:
+                    print(
+                        f"  [skip] {path.relative_to(processed_dir)} "
+                        f"(no canonical chunk fields)"
+                    )
             else:
                 print(f"  [skip] {path.name}")
         except Exception as e:

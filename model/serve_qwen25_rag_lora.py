@@ -2,7 +2,7 @@
 部署脚本：使用 Flask 启动本地推理服务，供 Node.js server 调用。
 
 启动示例：
-python serve_qwen25_rag_lora.py --base_model model/qwen2.5-1.7B --use_4bit --port 8001 
+python serve_qwen25_rag_lora.py --base_model /hy-tmp --lora_path ./outputs/qwen25_dpo_lora --enable_rag --use_4bit --port 8080 --host 0.0.0.0
 """
 
 from qwen_service.api import create_app

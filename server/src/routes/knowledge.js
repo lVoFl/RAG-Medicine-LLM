@@ -17,6 +17,7 @@ const FAISS_SERVICE_URL = process.env.FAISS_SERVICE_URL || "";
 const FAISS_SERVICE_TIMEOUT_MS = Number(process.env.FAISS_SERVICE_TIMEOUT_MS) || 600000;
 const FAISS_SERVICE_RAG_RELOAD_URL = process.env.FAISS_SERVICE_RAG_RELOAD_URL || "";
 const FAISS_SERVICE_OWNS_RELOAD = process.env.FAISS_SERVICE_OWNS_RELOAD !== "0";
+const ORIGIN_FILE_DIR = path.resolve(process.cwd(), "../database/origin_file");
 let isReindexRunning = false;
 
 function tailText(value, maxChars = 2000) {
@@ -107,6 +108,39 @@ async function runCommand(command, args, cwd) {
       reject(error);
     });
   });
+}
+
+function isUnderRoot(rootDir, targetPath) {
+  const normalizedRoot = path.resolve(rootDir);
+  const normalizedTarget = path.resolve(targetPath);
+  return (
+    normalizedTarget === normalizedRoot ||
+    normalizedTarget.startsWith(`${normalizedRoot}${path.sep}`)
+  );
+}
+
+async function walkOriginFiles(rootDir, currentDir, list) {
+  const entries = await fs.readdir(currentDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const absPath = path.join(currentDir, entry.name);
+    if (entry.isDirectory()) {
+      await walkOriginFiles(rootDir, absPath, list);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    const ext = path.extname(entry.name).toLowerCase();
+    if (ext !== ".pdf" && ext !== ".txt") continue;
+    const stat = await fs.stat(absPath);
+    const relativePath = path.relative(rootDir, absPath).replaceAll("\\", "/");
+    list.push({
+      name: entry.name,
+      path: relativePath,
+      ext: ext.slice(1),
+      size: stat.size,
+      updated_at: stat.mtime.toISOString(),
+      view_url: `/api/knowledge/origin-files/view?path=${encodeURIComponent(relativePath)}`,
+    });
+  }
 }
 
 function buildIngestKeyFromSource(source) {
@@ -346,6 +380,109 @@ router.post("/documents", async (req, res, next) => {
   }
 });
 
+// GET /api/knowledge/origin-files
+router.get("/origin-files", async (req, res, next) => {
+  try {
+    ensureAdmin(req);
+    const keyword = String(req.query.keyword || "").trim().toLowerCase();
+    const files = [];
+    await walkOriginFiles(ORIGIN_FILE_DIR, ORIGIN_FILE_DIR, files);
+    const filtered = keyword
+      ? files.filter(
+          (item) =>
+            item.name.toLowerCase().includes(keyword) || item.path.toLowerCase().includes(keyword)
+        )
+      : files;
+    filtered.sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+    res.json({
+      root: ORIGIN_FILE_DIR,
+      total: filtered.length,
+      list: filtered,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/knowledge/origin-files/view?path=xxx
+router.get("/origin-files/view", async (req, res, next) => {
+  try {
+    const relativePath = String(req.query.path || "").trim();
+    if (!relativePath) {
+      return res.status(400).json({ error: "path is required" });
+    }
+    const absPath = path.resolve(ORIGIN_FILE_DIR, relativePath);
+    if (!isUnderRoot(ORIGIN_FILE_DIR, absPath)) {
+      return res.status(400).json({ error: "invalid path" });
+    }
+    const ext = path.extname(absPath).toLowerCase();
+    if (ext !== ".txt" && ext !== ".pdf") {
+      return res.status(400).json({ error: "only txt/pdf are supported" });
+    }
+    const stat = await fs.stat(absPath).catch(() => null);
+    if (!stat || !stat.isFile()) {
+      return res.status(404).json({ error: "file not found" });
+    }
+
+    if (ext === ".txt") {
+      const content = await fs.readFile(absPath, "utf-8");
+      return res.type("text/plain; charset=utf-8").send(content);
+    }
+
+    res.type("application/pdf");
+    return res.sendFile(absPath);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/knowledge/origin-files/preview?path=xxx
+router.get("/origin-files/preview", async (req, res, next) => {
+  try {
+    const relativePath = String(req.query.path || "").trim();
+    if (!relativePath) {
+      return res.status(400).json({ error: "path is required" });
+    }
+    const absPath = path.resolve(ORIGIN_FILE_DIR, relativePath);
+    if (!isUnderRoot(ORIGIN_FILE_DIR, absPath)) {
+      return res.status(400).json({ error: "invalid path" });
+    }
+    const ext = path.extname(absPath).toLowerCase();
+    if (ext !== ".txt" && ext !== ".pdf") {
+      return res.status(400).json({ error: "only txt/pdf are supported" });
+    }
+    const stat = await fs.stat(absPath).catch(() => null);
+    if (!stat || !stat.isFile()) {
+      return res.status(404).json({ error: "file not found" });
+    }
+
+    const safePath = encodeURIComponent(relativePath);
+    const viewUrl = `/api/knowledge/origin-files/view?path=${safePath}`;
+    const html = `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>文件预览 - ${relativePath}</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; background: #f8fafc; color: #0f172a; }
+    .bar { padding: 10px 14px; border-bottom: 1px solid #e2e8f0; background: #fff; }
+    .name { font-size: 14px; word-break: break-all; }
+    .wrap { height: calc(100vh - 48px); }
+    iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+  </style>
+</head>
+<body>
+  <div class="bar"><div class="name">${relativePath}</div></div>
+  <div class="wrap"><iframe src="${viewUrl}"></iframe></div>
+</body>
+</html>`;
+    res.type("text/html; charset=utf-8").send(html);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/knowledge/upload-text
 // Accepts plain text content, then chunk -> embed -> append to FAISS.
 router.post("/upload-text", async (req, res, next) => {
@@ -370,12 +507,9 @@ router.post("/upload-text", async (req, res, next) => {
 
     stage = "validate_input";
     const { title, source, text, category, version, tags } = req.body || {};
-    const normalizedTitle = String(title || "").trim();
     const normalizedSource = String(source || "").trim();
+    const normalizedTitle = String(title || normalizedSource).trim();
     const normalizedText = String(text || "").trim();
-    if (!normalizedTitle) {
-      return res.status(400).json({ error: "title is required" });
-    }
     if (!normalizedSource) {
       return res.status(400).json({ error: "source is required" });
     }

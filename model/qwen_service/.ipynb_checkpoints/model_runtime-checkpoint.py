@@ -123,7 +123,6 @@ class ModelRuntime:
         rag_rerank_top_n: Optional[int] = None,
         rag_rrf_k: Optional[int] = None,
         rag_max_chars_per_doc: Optional[int] = None,
-        rag_min_relevance_score: Optional[float] = None,
     ) -> dict:
         start_t = time.time()
         rag_enabled = bool(self.rag_runtime) and (self.args.enable_rag if use_rag is None else bool(use_rag))
@@ -144,11 +143,6 @@ class ModelRuntime:
                 rerank_top_n=int(rag_rerank_top_n or self.args.rag_rerank_top_n),
                 rrf_k=int(rag_rrf_k or self.args.rag_rrf_k),
                 max_chars_per_doc=int(rag_max_chars_per_doc or self.args.rag_max_chars_per_doc),
-                min_relevance_score=float(
-                    self.args.rag_min_relevance_score
-                    if rag_min_relevance_score is None
-                    else rag_min_relevance_score
-                ),
             )
             self._log(
                 "rag context built | "
@@ -197,7 +191,6 @@ class ModelRuntime:
         rag_rerank_top_n: Optional[int] = None,
         rag_rrf_k: Optional[int] = None,
         rag_max_chars_per_doc: Optional[int] = None,
-        rag_min_relevance_score: Optional[float] = None,
     ):
         prepared = self._prepare_generation(
             question=question,
@@ -213,7 +206,6 @@ class ModelRuntime:
             rag_rerank_top_n=rag_rerank_top_n,
             rag_rrf_k=rag_rrf_k,
             rag_max_chars_per_doc=rag_max_chars_per_doc,
-            rag_min_relevance_score=rag_min_relevance_score,
         )
 
         with self.lock:
@@ -271,7 +263,6 @@ class ModelRuntime:
         rag_rerank_top_n: Optional[int] = None,
         rag_rrf_k: Optional[int] = None,
         rag_max_chars_per_doc: Optional[int] = None,
-        rag_min_relevance_score: Optional[float] = None,
     ) -> Iterator[dict]:
         prepared = self._prepare_generation(
             question=question,
@@ -287,7 +278,6 @@ class ModelRuntime:
             rag_rerank_top_n=rag_rerank_top_n,
             rag_rrf_k=rag_rrf_k,
             rag_max_chars_per_doc=rag_max_chars_per_doc,
-            rag_min_relevance_score=rag_min_relevance_score,
         )
 
         with self.lock:

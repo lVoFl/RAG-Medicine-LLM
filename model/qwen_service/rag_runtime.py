@@ -1,12 +1,12 @@
 import json
 import logging
+import os
 import threading
 import time
 from pathlib import Path
 
 import faiss
 import numpy as np
-from huggingface_hub import snapshot_download
 
 from qwen_service.text_utils import bm25_search, build_bm25_index, clip_text
 
@@ -38,19 +38,24 @@ class RAGRuntime:
                 "in your current environment."
             ) from exc
 
+        project_root = Path(__file__).resolve().parents[2]
+        bge_m3_dir = Path(os.getenv("BGE_M3_DIR", "/hy-tmp/bge-m3"))
+        reranker_dir = Path(os.getenv("BGE_RERANKER_DIR", "/hy-tmp/bge-reranker-v2-m3"))
+        # Backward-compat fallback to repo-local assets if needed.
+        if not bge_m3_dir.exists():
+            bge_m3_dir = project_root / "model_assets" / "hf_models" / "BAAI--bge-m3"
+        if not reranker_dir.exists():
+            reranker_dir = project_root / "model_assets" / "hf_models" / "BAAI--bge-reranker-v2-m3"
+        if not bge_m3_dir.exists():
+            raise RuntimeError(f"Local model not found: {bge_m3_dir}")
+        if not reranker_dir.exists():
+            raise RuntimeError(f"Local model not found: {reranker_dir}")
+
         print("Loading BAAI/bge-m3 ...")
-        model_dir = snapshot_download(
-            repo_id="BAAI/bge-m3",
-            ignore_patterns=["*.DS_Store", "imgs/*"],
-        )
-        self.model = BGEM3FlagModel(model_dir, use_fp16=True)
+        self.model = BGEM3FlagModel(str(bge_m3_dir), use_fp16=True)
 
         print("Loading reranker BAAI/bge-reranker-v2-m3 ...")
-        reranker_dir = snapshot_download(
-            repo_id="BAAI/bge-reranker-v2-m3",
-            ignore_patterns=["*.DS_Store", "imgs/*"],
-        )
-        self.reranker = FlagReranker(reranker_dir, use_fp16=True)
+        self.reranker = FlagReranker(str(reranker_dir), use_fp16=True)
         self.index = None
         self.chunks = []
         self.chunk_ids = np.array([], dtype="int64")
@@ -204,12 +209,14 @@ class RAGRuntime:
         rerank_top_n: int,
         rrf_k: int,
         max_chars_per_doc: int,
+        min_relevance_score: float,
     ) -> tuple[str, list[dict]]:
         start_t = time.time()
         self._log(
             "retrieve start | "
             f"query='{clip_text(query, self.debug_max_chars)}' top_k={top_k} "
-            f"candidate_k={candidate_k} rerank_top_n={rerank_top_n} rrf_k={rrf_k}"
+            f"candidate_k={candidate_k} rerank_top_n={rerank_top_n} rrf_k={rrf_k} "
+            f"min_relevance_score={min_relevance_score}"
         )
         with self.lock:
             recall_results = self.hybrid_recall(
@@ -219,6 +226,14 @@ class RAGRuntime:
                 rrf_k=rrf_k,
             )
             reranked = self.rerank(query, recall_results, top_k=top_k)
+
+        filtered = [
+            item
+            for item in reranked
+            if float(item.get("rerank_score", float("-inf"))) >= float(min_relevance_score)
+        ]
+        for i, item in enumerate(filtered, start=1):
+            item["rank"] = i
 
         if reranked:
             for item in reranked:
@@ -234,11 +249,16 @@ class RAGRuntime:
         else:
             self._log("no retrieved docs")
 
-        context = self.build_context(reranked, max_chars_per_doc=max_chars_per_doc)
+        if len(filtered) < len(reranked):
+            self._log(
+                f"filtered low relevance docs | before={len(reranked)} after={len(filtered)} "
+                f"threshold={min_relevance_score}"
+            )
+
+        context = self.build_context(filtered, max_chars_per_doc=max_chars_per_doc)
         self._log(
-            f"retrieve done | docs={len(reranked)} "
+            f"retrieve done | docs={len(filtered)} "
             f"context_chars={len(context)} "
             f"elapsed_ms={int((time.time() - start_t) * 1000)}"
         )
-        return context, reranked
-
+        return context, filtered

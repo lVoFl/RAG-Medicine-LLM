@@ -1,0 +1,12 @@
+{
+  "total_rows": 149,
+  "rows_with_reference": 0,
+  "embedding_model": "BAAI/bge-m3",
+  "factual_method": "auto",
+  "nli_model": "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
+  "judge_model": null,
+  "avg_base_semantic_relevance": 0.8353144035483657,
+  "avg_dpo_semantic_relevance": 0.8355414245299166,
+  "delta_dpo_minus_base_semantic_relevance": 0.00022702098155091832,
+  "avg_base_dpo_semantic_similarity": 0.9760908312748184
+}

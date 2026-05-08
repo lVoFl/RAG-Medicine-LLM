@@ -1,0 +1,47 @@
+{"query":"哪种降糖药可减少肝糖输出并改善胰岛素抵抗，且与磺脲类联合时可进一步降低HbA1c？", "relevant_faiss_ids":[790]}
+{"query":"妊娠期糖尿病（GDM）中A1型与A2型的主要区别是什么？", "relevant_faiss_ids":[2977]}
+{"query":"氯沙坦钾/氢氯噻嗪等固定复方制剂在老年高血压中的常见给药剂量是多少？", "relevant_faiss_ids":[3748]}
+{"query":"高血压肾病的诊断标准中，如何定义高血压和慢性肾病（CKD）？", "relevant_faiss_ids":[4009]}
+{"query":"老年糖尿病患者发生低血糖的危险因素及其临床后果有哪些？", "relevant_faiss_ids":[1413]}
+{"query":"妊娠期糖尿病酮症酸中毒（DKA）对母体及胎儿分别可能造成哪些不良影响？", "relevant_faiss_ids":[3097]}
+{"query":"烟酸用于高脂血症治疗的作用机制及其用法用量和主要不良反应是什么？", "relevant_faiss_ids":[3386]}
+{"query":"高血压急症患者在问诊中需要重点关注哪些内容以判断继发性高血压？", "relevant_faiss_ids":[3856]}
+{"query":"高血压为何是心力衰竭最重要的危险因素？", "relevant_faiss_ids":[3868]}
+{"query":"糖尿病酮症酸中毒在胰岛素及补液治疗过程中，何时需要补钾及补碱，其指征分别是什么？", "relevant_faiss_ids":[3067]}
+{"query":"夜间高血压的诊断标准是什么？", "relevant_faiss_ids":[3536]}
+{"query":"TZD可降低HbA1c多少？", "relevant_faiss_ids":[325]}
+{"query":"老年高血压患者生活方式干预中，理想体质量控制、运动方式是什么？", "relevant_faiss_ids":[1938]}
+{"query":"2型糖尿病患者戒烟的健康获益、体重变化机制及主要戒烟干预措施有哪些？", "relevant_faiss_ids":[2826]}
+{"query":"中国糖尿病患者的知晓率、治疗率和控制率在不同年份的变化情况如何？", "relevant_faiss_ids":[974]}
+{"query":"糖尿病合并动脉粥样硬化性心血管疾病（ASCVD）患者抗血小板治疗中，阿司匹林和氯吡格雷的推荐剂量及适应证是什么？", "relevant_faiss_ids":[58]}
+{"query":"在糖尿病行为与生活方式干预中，哪些行为改变技术（BCTs）与HbA1c降低相关？","relevant_faiss_ids":[168]}
+{"query":"糖尿病患者从基层上转至二级及以上医院的指征有哪些？","relevant_faiss_ids":[1722]}
+{"query":"精神压力相关高血压的药物治疗中，SSRIs类抗抑郁药的主要代表及其作用机制是什么？","relevant_faiss_ids":[3686]}
+{"query":"高血压肾病患者（CKD 1~2期，非糖尿病）及不同年龄阶段患者的降压目标分别是多少？","relevant_faiss_ids":[4040]}
+{"query":"高血压合并冠心病患者若同时合并糖尿病其心血管事件风险会增加多少倍？","relevant_faiss_ids":[2710]}
+{"query":"强化降压与标准降压相比，对60–80岁老年高血压患者的主要心血管不良事件风险有何影响？","relevant_faiss_ids":[2161]}
+{"query":"中国老年高血压患病率在不同年龄段及不同时期的变化趋势如何？","relevant_faiss_ids":[1909]}
+{"query":"家族性高胆固醇血症中LDLR无效突变及APOB基因突变对LDL水平、药物反应及心血管风险有何影响？","relevant_faiss_ids":[3133]}
+{"query":"高血压合并冠心病患者的降压治疗启动阈值及目标血压范围分别是多少？","relevant_faiss_ids":[2712]}
+{"query":"老年高血压心率管理中β受体阻滞剂的应用","relevant_faiss_ids":[1970]}
+{"query":"降脂治疗后血脂应多久检测一次？","relevant_faiss_ids":[665]}
+{"query":"依折麦布联用他汀可使LDL-C再降低多少？","relevant_faiss_ids":[669]}
+{"query":"糖尿病基本评估包括哪些方面？","relevant_faiss_ids":[1096]}
+{"query":"糖尿病患者最常见的感染类型是什么？","relevant_faiss_ids":[1428]}
+{"query":"糖尿病患者最常见的感染类型是什么？","relevant_faiss_ids":[2159]}
+{"query":"65~79岁高血压患者血压控制目标是多少？","relevant_faiss_ids":[2159]}
+{"query":"哪些失眠患者需要减半量用药？","relevant_faiss_ids":[2516]}
+{"query":"ANGPTL3抑制剂用于治疗纯合子家族性高胆固醇血症的推荐给药方式和剂量是多少？","relevant_faiss_ids":[3262]}
+{"query":"糖尿病患者中，什么情况下需将ASCVD风险评为高危并据此调整LDL-C控制目标？","relevant_faiss_ids":[3268]}
+{"query":"精神压力相关高血压的主要发病机制是什么？","relevant_faiss_ids":[3667]}
+{"query":"精神压力相关高血压中炎症反应为什么会升高血压？","relevant_faiss_ids":[3669]}
+{"query":"继发性高血压的主要病因分类有哪些？","relevant_faiss_ids":[3690]}
+{"query":"肥胖高血压患者推荐做哪些运动保持什么样的频率？","relevant_faiss_ids":[3821]}
+{"query":"CCB是什么药物及其降压作用机制是什么？","relevant_faiss_ids":[3911]}
+{"query":"高血压肾病的主要辅助检查有哪些？","relevant_faiss_ids":[4001]}
+{"query":"高血压肾病在我国CKD患者中占比及其主要病因","relevant_faiss_ids":[4005]}
+{"query":"高血压肾病在我国CKD患者中占比及其主要病因","relevant_faiss_ids":[4005]}
+{"query":"糖尿病相关遗传综合征中，哪些单基因突变综合征会合并糖尿病？","relevant_faiss_ids":[515]}
+{"query":"体力活动减少与糖尿病发生风险增加多少？","relevant_faiss_ids":[235]}
+{"query":"糖尿病患者血压≥140/90 mmHg和≥160/100 mmHg时分别如何处理？","relevant_faiss_ids":[414]}
+{"query":"基层医疗机构应配备哪些降脂药物类别？","relevant_faiss_ids":[657]}

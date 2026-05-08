@@ -6,6 +6,7 @@ docling 不支持 TXT 输入，本脚本使用自定义解析：
   1. 按空行切分段落
   2. 识别标题行（短行 + 中文编号模式），维护层级标题栈
   3. 按 MAX_CHARS 合并或拆分段落形成 chunk
+  4. 相邻 chunk 使用 OVERLAP_CHARS 字符重叠
 
 输出目录结构：
   database/processed_txt/
@@ -28,6 +29,8 @@ OUTPUT_DIR = Path(__file__).parent / "processed_txt"
 
 # 字符数上限（中文约 1.5 字/token，512 tokens ≈ 768 字）
 MAX_CHARS = 768
+# 相邻 chunk 重叠字符数（建议 10%~20%）
+OVERLAP_CHARS = 120
 # 视为标题的最大行长
 HEADING_MAX_LEN = 40
 # 截断文末无关内容的标记词
@@ -145,21 +148,88 @@ def headings_str(stack: list[tuple[int, str]]) -> str:
     return " > ".join(txt for _, txt in stack)
 
 
-def split_long_text(text: str, max_chars: int) -> list[str]:
-    """按句子边界拆分超长文本"""
+def _overlap_tail(text: str, overlap_chars: int) -> str:
+    """取文本尾部 overlap 窗口，作为下一 chunk 的前缀"""
+    if overlap_chars <= 0:
+        return ""
+    return text[-overlap_chars:].strip()
+
+
+def _hard_split_with_overlap(text: str, max_chars: int, overlap_chars: int) -> list[str]:
+    """兜底硬切分：确保每个片段不超过 max_chars"""
+    if len(text) <= max_chars:
+        return [text]
+    if overlap_chars >= max_chars:
+        overlap_chars = max_chars // 4
+    step = max_chars - max(overlap_chars, 0)
+    out = []
+    start = 0
+    while start < len(text):
+        end = min(start + max_chars, len(text))
+        piece = text[start:end].strip()
+        if piece:
+            out.append(piece)
+        if end >= len(text):
+            break
+        start += max(step, 1)
+    return out
+
+
+def split_long_text(text: str, max_chars: int, overlap_chars: int) -> list[str]:
+    """按句子边界拆分超长文本，并在相邻 chunk 间添加重叠"""
     if len(text) <= max_chars:
         return [text]
     sentences = re.split(r'(?<=[。！？.!?])', text)
     chunks, buf = [], ""
     for sent in sentences:
         if len(buf) + len(sent) > max_chars and buf:
-            chunks.append(buf.strip())
-            buf = sent
+            prev = buf.strip()
+            chunks.append(prev)
+            carry = _overlap_tail(prev, overlap_chars)
+            buf = (carry + sent).strip() if carry else sent
+            if len(buf) > max_chars:
+                # 极端情况下（单句过长）退化为无 overlap
+                buf = sent
         else:
             buf += sent
     if buf.strip():
         chunks.append(buf.strip())
-    return chunks or [text]
+    chunks = chunks or [text]
+
+    # 兜底：若仍有超长片段（常见于超长单句），进行硬切分
+    fixed = []
+    for c in chunks:
+        if len(c) > max_chars:
+            fixed.extend(_hard_split_with_overlap(c, max_chars, overlap_chars))
+        else:
+            fixed.append(c)
+    return fixed
+
+
+def _pctl(sorted_vals: list[int], q: float) -> int:
+    if not sorted_vals:
+        return 0
+    idx = int((len(sorted_vals) - 1) * q)
+    return sorted_vals[idx]
+
+
+def log_chunk_stats(contents: list[str]) -> None:
+    """输出 chunk 长度分布，辅助判断 MAX_CHARS 是否合适"""
+    if not contents:
+        return
+    lens = sorted(len(c) for c in contents)
+    p50 = _pctl(lens, 0.50)
+    p90 = _pctl(lens, 0.90)
+    p95 = _pctl(lens, 0.95)
+    mx = lens[-1]
+    log.info(
+        f"  chunk长度(字符) p50/p90/p95/max = {p50}/{p90}/{p95}/{mx} "
+        f"(max={MAX_CHARS}, overlap={OVERLAP_CHARS})"
+    )
+    if p95 < int(MAX_CHARS * 0.45):
+        log.warning("  chunk 偏小：可考虑增大 MAX_CHARS（如 896/1024）")
+    if mx > MAX_CHARS:
+        log.warning("  存在超过 MAX_CHARS 的 chunk，建议检查分句规则")
 
 
 def chunk_txt(text: str) -> list[dict]:
@@ -209,10 +279,13 @@ def chunk_txt(text: str) -> list[dict]:
         else:
             para = block["text"]
             if len(buf) + len(para) + 1 > MAX_CHARS:
-                flush(buf_headings, buf)
-                buf = ""
-                # 单段落本身超长则继续拆分
-                pieces = split_long_text(para, MAX_CHARS)
+                prev = buf
+                flush(buf_headings, prev)
+                buf = _overlap_tail(prev, OVERLAP_CHARS)
+
+                candidate = (buf + "\n" + para).strip() if buf else para
+                # 单段落本身超长则继续拆分（含 overlap）
+                pieces = split_long_text(candidate, MAX_CHARS, OVERLAP_CHARS)
                 for piece in pieces[:-1]:
                     flush(buf_headings, piece)
                 buf = pieces[-1] if pieces else ""
@@ -237,7 +310,11 @@ def process_txt(txt_path: Path) -> list[dict]:
     log.info(f"  原始 chunk 数: {len(chunks_raw)}")
 
     category = txt_path.parent.name
-    source = txt_path.name
+    title = txt_path.stem
+    try:
+        source = txt_path.resolve().relative_to(ORIGIN_DIR.resolve()).as_posix()
+    except ValueError:
+        source = txt_path.name
     chunks_out = []
 
     for i, c in enumerate(chunks_raw):
@@ -245,6 +322,7 @@ def process_txt(txt_path: Path) -> list[dict]:
             continue
         chunks_out.append({
             "chunk_id": i,
+            "title":    title,
             "source":   source,
             "category": category,
             "headings": c["headings"],
@@ -252,6 +330,7 @@ def process_txt(txt_path: Path) -> list[dict]:
         })
 
     log.info(f"  有效 chunk 数: {len(chunks_out)}")
+    log_chunk_stats([c["content"] for c in chunks_out])
     return chunks_out
 
 

@@ -11,7 +11,9 @@ Flow:
 
 import argparse
 import json
+import os
 import re
+import time
 from pathlib import Path
 
 import faiss
@@ -77,16 +79,34 @@ def split_text(text: str, max_chars: int, overlap: int) -> list[str]:
 
 def main():
     args = parse_args()
+    t0 = time.time()
     text_file = Path(args.text_file)
     index_dir = Path(args.index_dir)
     index_path = index_dir / "index.faiss"
     chunks_path = index_dir / "chunks.json"
     chunk_ids_path = index_dir / "chunk_ids.npy"
 
+    print(
+        json.dumps(
+            {
+                "stage": "start",
+                "text_file": str(text_file),
+                "index_dir": str(index_dir),
+                "source": args.source,
+                "max_chars": args.max_chars,
+                "overlap": args.overlap,
+                "batch_size": args.batch_size,
+                "max_length": args.max_length,
+            },
+            ensure_ascii=False,
+        ),
+        flush=True,
+    )
     raw_text = text_file.read_text(encoding="utf-8")
     chunk_texts = split_text(raw_text, max_chars=args.max_chars, overlap=args.overlap)
     if not chunk_texts:
         raise RuntimeError("text is empty after normalization")
+    print(json.dumps({"stage": "split", "chunks": len(chunk_texts)}, ensure_ascii=False), flush=True)
 
     if chunks_path.exists():
         with open(chunks_path, encoding="utf-8") as f:
@@ -123,7 +143,21 @@ def main():
         content = chunk.get("content", "")
         passages.append(f"{heading}\n{content}".strip())
 
-    model = BGEM3FlagModel("BAAI/bge-m3", use_fp16=True)
+    project_root = Path(__file__).resolve().parents[1]
+    model_dir = Path(os.getenv("BGE_M3_DIR", "/hy-tmp/bge-m3"))
+    if not model_dir.exists():
+        model_dir = project_root / "model_assets" / "hf_models" / "BAAI--bge-m3"
+    if not model_dir.exists():
+        raise RuntimeError(f"local model not found: {model_dir}")
+    print(
+        json.dumps(
+            {"stage": "load_model", "model": "BAAI/bge-m3", "path": str(model_dir)},
+            ensure_ascii=False,
+        ),
+        flush=True,
+    )
+    model = BGEM3FlagModel(str(model_dir), use_fp16=True)
+    print(json.dumps({"stage": "encode", "passages": len(passages)}, ensure_ascii=False), flush=True)
     vectors = model.encode(passages, batch_size=args.batch_size, max_length=args.max_length)[
         "dense_vecs"
     ].astype("float32")
@@ -136,6 +170,10 @@ def main():
             )
     else:
         index = faiss.IndexFlatIP(vectors.shape[1])
+    print(
+        json.dumps({"stage": "index_ready", "ntotal_before": int(index.ntotal)}, ensure_ascii=False),
+        flush=True,
+    )
 
     vector_ids = np.array([int(item["chunk_id"]) for item in new_chunks], dtype="int64")
     try:
@@ -164,6 +202,8 @@ def main():
         json.dump(chunks, f, ensure_ascii=False, indent=2)
     np.save(chunk_ids_path, all_chunk_ids_np)
 
+    elapsed_ms = int((time.time() - t0) * 1000)
+
     print(
         json.dumps(
             {
@@ -172,9 +212,11 @@ def main():
                 "index_total": index.ntotal,
                 "chunk_ids_total": int(all_chunk_ids_np.shape[0]),
                 "source": args.source,
+                "elapsed_ms": elapsed_ms,
             },
             ensure_ascii=False,
-        )
+        ),
+        flush=True,
     )
 
 
