@@ -44,6 +44,8 @@ def create_app(runtime: ModelRuntime) -> Flask:
         payload = {
             "question": question,
             "context": data.get("context"),
+            "health_profile": data.get("health_profile"),
+            "report_text": data.get("report_text"),
             "history": history,
             "system_prompt": data.get("system_prompt"),
             "max_new_tokens": data.get("max_new_tokens"),

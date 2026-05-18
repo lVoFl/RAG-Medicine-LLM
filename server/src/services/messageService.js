@@ -43,7 +43,7 @@ export async function createMessage({ conversationId, role, content, tokens }) {
     `,
     [conversationId, role, content, tokens ?? null]
   );
-  console.log(result.rows[0]);
+  // console.log(result.rows[0]);
   return result.rows[0];
 }
 

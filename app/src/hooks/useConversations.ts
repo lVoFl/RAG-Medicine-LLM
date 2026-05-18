@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import api from "../http/conservation";
 import type { Message, RagDoc } from "../types/conservation";
@@ -79,6 +79,11 @@ export function useConversations() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string>("");
   const [activeConversationMessages, setActiveConversationMessages] = useState<ConversationMessage[]>([]);
+  const conversationsRef = useRef<Conversation[]>([]);
+
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
 
   const sortedConversations = useMemo(
     () => [...conversations].sort((a, b) => b.updatedAt - a.updatedAt),
@@ -91,6 +96,13 @@ export function useConversations() {
       const response = await api.Get_Message(conversationId);
       const nextMessages = Array.isArray(response.data) ? response.data : [];
       setActiveConversationMessages(nextMessages as ConversationMessage[]);
+      setConversations((prev) =>
+        prev.map((conversation) =>
+          conversation.id === conversationId
+            ? { ...conversation, messageCount: nextMessages.length }
+            : conversation
+        )
+      );
     } catch (error) {
       console.error("加载消息失败:", error);
     }
@@ -175,17 +187,19 @@ export function useConversations() {
   );
 
   const updateConversationMessages = useCallback(
-    (id: string, updater: (messages: Message[]) => Message[]) => {
+    (id: string, updater: (messages: Message[]) => Message[], messageCountDelta = 0) => {
       setActiveConversationMessages((prev) => {
         const next = updater(prev as Message[]) as ConversationMessage[];
         return next;
       });
 
+      if (messageCountDelta === 0) return;
+
       setConversations((prev) =>
         prev.map((conversation) => {
           if (conversation.id !== id) return conversation;
-          const isFirstMessage = conversation.messageCount === 0;
-          return { ...conversation, messageCount: isFirstMessage ? 1 : conversation.messageCount };
+          const nextCount = Math.max(0, conversation.messageCount + messageCountDelta);
+          return { ...conversation, messageCount: nextCount };
         })
       );
     },
@@ -193,7 +207,13 @@ export function useConversations() {
   );
 
   const submitMessage = useCallback(
-    async (e?: FormEvent) => {
+    async (
+      e?: FormEvent,
+      supplementalData?: {
+        healthProfile?: Record<string, string>;
+        reportText?: string;
+      }
+    ) => {
       e?.preventDefault();
       setIsSending(true);
       const conversationId = activeConversationId;
@@ -231,11 +251,27 @@ export function useConversations() {
           ...messages,
           userMessage,
           assistantPlaceholder,
-        ]);
+        ], 2);
 
         setInputValue("");
+        const normalizedHealthProfile =
+          supplementalData?.healthProfile && typeof supplementalData.healthProfile === "object"
+            ? Object.fromEntries(
+                Object.entries(supplementalData.healthProfile).filter(
+                  ([, value]) => String(value ?? "").trim() !== ""
+                )
+              )
+            : undefined;
+        const normalizedReportText = String(supplementalData?.reportText ?? "").trim();
         await api.SendAndGenerateStream(
-          { question: text },
+          {
+            question: text,
+            health_profile:
+              normalizedHealthProfile && Object.keys(normalizedHealthProfile).length
+                ? normalizedHealthProfile
+                : undefined,
+            report_text: normalizedReportText || undefined,
+          },
           conversationId,
           {
             onDelta: (delta) => {
@@ -262,7 +298,6 @@ export function useConversations() {
             onDone: (event) => {
               if (event.type !== "end") return;
               const docs = normalizeRagDocs(event.retrieved_docs);
-              console.log(docs)
               if (!docs.length) return;
 
               updateConversationMessages(conversationId, (messages) => {
@@ -314,6 +349,7 @@ export function useConversations() {
       conversations,
       getMessages,
       inputValue,
+      // include callable arg usage through closure stability
       updateConversationMessages,
     ]
   );
@@ -371,8 +407,11 @@ export function useConversations() {
 
   useEffect(() => {
     const cleanupEmptyConversations = () => {
-      const emptyIds = conversations.filter(isEmptyNewConversation).map((conversation) => conversation.id);
+      const emptyIds = conversationsRef.current
+        .filter(isEmptyNewConversation)
+        .map((conversation) => conversation.id);
       if (!emptyIds.length) return;
+
       emptyIds.forEach((conversationId) => {
         void api.Delete_Conversation(conversationId).catch((error) => {
           console.error("退出时清理空会话失败:", error);
@@ -389,7 +428,7 @@ export function useConversations() {
       window.removeEventListener("pagehide", handlePageHide);
       cleanupEmptyConversations();
     };
-  }, [conversations]);
+  }, []);
 
   return {
     isSending,

@@ -24,17 +24,65 @@ DEFAULT_SYSTEM_PROMPT = (
 )
 
 
-def build_user_text(question: str, context: Optional[str]) -> str:
+def _build_health_profile_text(health_profile: Optional[dict]) -> str:
+    if not isinstance(health_profile, dict):
+        return ""
+
+    field_labels = {
+        "age": "年龄",
+        "height": "身高(cm)",
+        "weight": "体重(kg)",
+        "systolic": "收缩压(mmHg)",
+        "diastolic": "舒张压(mmHg)",
+        "fastingGlucose": "空腹血糖(mmol/L)",
+        "postprandialGlucose": "餐后血糖(mmol/L)",
+        "hba1c": "糖化血红蛋白(%)",
+        "totalCholesterol": "总胆固醇(mmol/L)",
+        "triglyceride": "甘油三酯(mmol/L)",
+        "ldl": "LDL-C(mmol/L)",
+        "hdl": "HDL-C(mmol/L)",
+    }
+
+    lines = []
+    for key, label in field_labels.items():
+        value = health_profile.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if not text:
+            continue
+        lines.append(f"- {label}: {text}")
+
+    return "\n".join(lines).strip()
+
+
+def build_user_text(
+    question: str,
+    context: Optional[str],
+    health_profile: Optional[dict] = None,
+    report_text: Optional[str] = None,
+) -> str:
     clean_question = (question or "").strip()
     clean_context = (context or "").strip()
+    clean_report_text = (report_text or "").strip()
+    health_text = _build_health_profile_text(health_profile)
+
+    sections = [f"问题：{clean_question}"]
     if clean_context:
-        return f"问题：{clean_question}\n\n检索资料：\n{clean_context}"
-    return f"问题：{clean_question}"
+        sections.append(f"检索资料：\n{clean_context}")
+    if health_text:
+        sections.append(f"身体指标：\n{health_text}")
+    if clean_report_text:
+        sections.append(f"检测报告解析文本：\n{clean_report_text}")
+
+    return "\n\n".join(sections)
 
 
 def build_chat_messages(
     question: str,
     context: Optional[str],
+    health_profile: Optional[dict],
+    report_text: Optional[str],
     history: Optional[list[dict]],
     system_prompt: Optional[str],
     fallback_system_prompt: str = DEFAULT_SYSTEM_PROMPT,
@@ -60,7 +108,17 @@ def build_chat_messages(
 
     messages.extend(normalized_history)
 
-    messages.append({"role": "user", "content": build_user_text(question=question, context=context)})
+    messages.append(
+        {
+            "role": "user",
+            "content": build_user_text(
+                question=question,
+                context=context,
+                health_profile=health_profile,
+                report_text=report_text,
+            ),
+        }
+    )
     return messages
 
 
@@ -68,6 +126,8 @@ def render_chat_prompt(
     tokenizer,
     question: str,
     context: Optional[str],
+    health_profile: Optional[dict],
+    report_text: Optional[str],
     history: Optional[list[dict]],
     system_prompt: Optional[str],
     fallback_system_prompt: str = DEFAULT_SYSTEM_PROMPT,
@@ -75,6 +135,8 @@ def render_chat_prompt(
     messages = build_chat_messages(
         question=question,
         context=context,
+        health_profile=health_profile,
+        report_text=report_text,
         history=history,
         system_prompt=system_prompt,
         fallback_system_prompt=fallback_system_prompt,

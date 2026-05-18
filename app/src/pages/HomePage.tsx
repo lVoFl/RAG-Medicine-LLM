@@ -12,6 +12,13 @@ export default function HomePage() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [supplementalData, setSupplementalData] = useState<{
+    healthProfile: Record<string, string>;
+    reportText: string;
+  }>({
+    healthProfile: {},
+    reportText: "",
+  });
 
   const {
     isSending,
@@ -50,6 +57,13 @@ export default function HomePage() {
       setIsAdmin(false);
     }
   }, []);
+
+  useEffect(() => {
+    setSupplementalData({
+      healthProfile: {},
+      reportText: "",
+    });
+  }, [activeConversationId]);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -125,7 +139,9 @@ export default function HomePage() {
             inputValue={inputValue}
             isSending={isSending}
             onInputChange={setInputValue}
-            onSubmit={submitMessage}
+            onSubmit={(e) => submitMessage(e, supplementalData)}
+            onSaveSupplementalData={setSupplementalData}
+            activeConversationId={activeConversationId}
           />
         </div>
       </main>

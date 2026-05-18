@@ -11,6 +11,7 @@ type ChatRole = "user" | "assistant" | "system" | "summary" | "tool";
 
 export interface RagDoc {
     chunk_id?: string | number;
+    title?: string;
     source?: string;
     headings?: string;
     content?: string;

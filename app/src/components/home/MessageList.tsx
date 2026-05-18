@@ -51,12 +51,14 @@ function normalizeRagDocs(raw: unknown): RagDoc[] {
   return raw
     .map((item) => {
       if (!item || typeof item !== "object") return null;
+      const title = typeof item.title === "string" ? item.title : "";
       const source = typeof item.source === "string" ? item.source : "";
       const headings = typeof item.headings === "string" ? item.headings : "";
       const content = typeof item.content === "string" ? item.content : "";
-      if (!source && !headings && !content) return null;
+      if (!title && !source && !headings && !content) return null;
       return {
         ...item,
+        title,
         source,
         headings,
         content,
@@ -78,7 +80,7 @@ function getRagDocsFromMessage(message: ConversationMessage): RagDoc[] {
 function dedupeBySource(docs: RagDoc[]): RagDoc[] {
   const seen = new Set<string>();
   return docs.filter((doc) => {
-    const key = String(doc.source || "未知来源").trim().toLowerCase();
+    const key = String(doc.title || doc.source || "未知来源").trim().toLowerCase();
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -120,9 +122,9 @@ function CitationPanel({ ragDocs }: CitationPanelProps) {
           >
             <ol className="mt-2 space-y-2 text-sm text-slate-700">
               {ragDocs.map((doc, docIndex) => (
-                <li key={`${doc.chunk_id ?? doc.source ?? "doc"}-${docIndex}`} className="leading-6">
+                <li key={`${doc.chunk_id ?? doc.title ?? doc.source ?? "doc"}-${docIndex}`} className="leading-6">
                   <span className="mr-2 text-slate-500">{docIndex + 1}.</span>
-                  <span>{doc.source || "未知来源"}</span>
+                  <span>{doc.title || doc.source || "未知来源"}</span>
                   {doc.source ? (
                     <a
                       href={`${API_BASE_URL}/api/knowledge/origin-files/preview?path=${encodeURIComponent(

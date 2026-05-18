@@ -31,56 +31,7 @@ function getUserIdFromAuthHeader(req) {
   }
 }
 
-// POST /api/model/generate
-router.post("/generate", async (req, res, next) => {
-  try {
-    getUserIdFromAuthHeader(req);
-
-    const {
-      question,
-      context,
-      history,
-      system_prompt: systemPrompt,
-      max_new_tokens: maxNewTokens,
-      temperature,
-      top_p: topP,
-    } = req.body || {};
-
-    if (!question || !String(question).trim()) {
-      return res.status(400).json({ error: "question is required" });
-    }
-
-    const result = await generateWithLocalModel({
-      question: String(question),
-      context: context == null ? undefined : String(context),
-      history: Array.isArray(history) ? history : undefined,
-      systemPrompt: systemPrompt == null ? undefined : String(systemPrompt),
-      maxNewTokens,
-      temperature,
-      topP,
-    });
-    console.log(result)
-    const usage =
-      result.usage && typeof result.usage === "object"
-        ? {
-            ...result.usage,
-            total_tokens:
-              Number(result.usage.prompt_tokens || 0) + Number(result.usage.completion_tokens || 0),
-          }
-        : null;
-
-    res.json({
-      answer: result.answer,
-      usage,
-      params: result.params || null,
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
 // POST /api/model/conversations/:id/generate
-// Workflow: check conversation -> insert user message -> call local LLM -> insert assistant message -> return response.
 router.post("/conversations/:id/generate", async (req, res, next) => {
   try {
     const userId = getUserIdFromAuthHeader(req);
@@ -92,6 +43,8 @@ router.post("/conversations/:id/generate", async (req, res, next) => {
     const {
       question,
       context,
+      health_profile: healthProfile,
+      report_text: reportText,
       system_prompt: systemPrompt,
       max_new_tokens: maxNewTokens,
       temperature,
@@ -108,12 +61,15 @@ router.post("/conversations/:id/generate", async (req, res, next) => {
       conversationId,
       question: normalizedQuestion,
       context: context == null ? undefined : String(context),
+      healthProfile:
+        healthProfile && typeof healthProfile === "object" ? healthProfile : undefined,
+      reportText: reportText == null ? undefined : String(reportText),
       systemPrompt: systemPrompt == null ? undefined : String(systemPrompt),
       maxNewTokens,
       temperature,
       topP,
     });
-    console.log(result);
+
     await pool.query(
       `
       UPDATE conversations
@@ -125,7 +81,6 @@ router.post("/conversations/:id/generate", async (req, res, next) => {
       [result.assistant_message.content, conversationId, userId]
     );
     res.status(201).json(result);
-    
   } catch (err) {
     next(err);
   }
@@ -143,6 +98,8 @@ router.post("/conversations/:id/generate/stream", async (req, res, next) => {
     const {
       question,
       context,
+      health_profile: healthProfile,
+      report_text: reportText,
       system_prompt: systemPrompt,
       max_new_tokens: maxNewTokens,
       temperature,
@@ -159,14 +116,20 @@ router.post("/conversations/:id/generate/stream", async (req, res, next) => {
       conversationId,
       question: normalizedQuestion,
       context: context == null ? undefined : String(context),
+      healthProfile:
+        healthProfile && typeof healthProfile === "object" ? healthProfile : undefined,
+      reportText: reportText == null ? undefined : String(reportText),
       systemPrompt: systemPrompt == null ? undefined : String(systemPrompt),
       maxNewTokens,
     });
-
+    console.log(reportText)
     streamSession = await generateWithLocalModelStream({
       question: normalizedQuestion,
       context: baseContext || undefined,
       history: history.length > 0 ? history : undefined,
+      healthProfile:
+        healthProfile && typeof healthProfile === "object" ? healthProfile : undefined,
+      reportText: reportText == null ? undefined : String(reportText),
       systemPrompt: systemPrompt == null ? undefined : String(systemPrompt),
       maxNewTokens,
       temperature,
