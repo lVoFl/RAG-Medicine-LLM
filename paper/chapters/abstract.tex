@@ -1,27 +1,26 @@
 % !Mode:: "TeX:UTF-8"
 
-
 \begin{chineseabstract}
 
-近年来，人口老龄化问题不断加深，慢性病人群规模持续扩大，关于慢性病的相关健康咨询需求不断增加；然而，传统线下问诊在便利性和及时性方面存在一定限制，难以满足用户日常持续性的健康信息获取需求。与此同时，大语言模型在自然语言理解和生成任务中展现出了较强的能力，为智能问答系统在医疗健康领域的应用提供了新的技术路径。
+近年来，随着人口老龄化加剧，高血压、高血糖和高血脂（“三高”）慢性病人群持续扩大，围绕指标监测、用药管理和生活方式干预的日常咨询需求显著增长。传统线下问诊在便利性和及时性方面存在限制，难以满足“三高”患者高频、连续的健康信息获取需求。与此同时，大语言模型在自然语言理解与生成任务中展现出较强能力，为智能医疗问答提供了新的技术路径。
 
-但是，在医学等高风险应用场景中，大语言模型仍存在一定局限，例如会产生事实性错误（幻觉）、安全性约束不足以及专业知识的理解不足。因此，有必要结合外部知识与模型优化方法，对模型进行优化，以提升其在医学场景中的安全性与可靠性。
+但是，在医学等高风险应用场景中，大语言模型仍存在一定局限，例如会产生事实性错误（幻觉）、安全性约束不足以及专业知识利用不充分。因此，有必要将检索增强生成（Retrieval-Augmented Generation, RAG）与模型优化方法结合，以提升模型在“三高”慢病问答中的安全性与可靠性。
 
-针对上述问题，本文围绕“三高”慢性病的咨询场景，设计并实现基于检索增强生成的医学问答系统。本文通过国家政策、学术期刊和医学指南等可靠来源搜集相关资料，构建医学知识库，并结合语义检索和关键词检索精准匹配医学文档，从而为大语言模型提供外部知识支撑。针对模型安全性约束不足等问题，本文引入人类偏好优化方法，通过偏好数据对模型进行微调，使其生成内容更符合医学场景下的安全性和规范性要求。在此基础上，本文完成了医学问答系统的整体设计与实现，实现了从知识构建、检索增强到模型生成的完整问答流程。
+针对上述问题，本文围绕“三高”慢性病咨询场景，设计并实现了基于RAG的医学问答系统。本文首先通过国家政策、学术期刊和临床指南等可靠来源构建医学知识库。考虑到“三高”问答同时存在医学术语精确匹配需求与语义理解需求，单一路径检索难以兼顾召回覆盖与相关性，因此进一步设计了融合关键词检索与语义检索的混合检索策略，为生成阶段提供更稳定的外部证据支撑。针对模型安全性约束不足等问题，本文引入直接偏好优化（Direct Preference Optimization, DPO）方法，基于偏好数据对模型进行优化，使生成内容更符合医学场景下的安全性与规范性要求。在此基础上，本文完成了系统的整体设计与实现，形成了从知识构建、检索增强到答案生成的完整问答流程。
 
-实验结果表明，混合检索在召回覆盖率上优于单一路径检索，Recall@5召回率达到89\%；同时，基于DPO优化后的模型在盲评中相较于基础模型取得59.2\%的胜率，优化后的模型在事实一致性和完备性上均优于基础模型。
+实验结果表明，所提出的混合检索在召回覆盖率上优于单一路径检索，Recall@5达到89\%；同时，基于DPO优化后的模型在盲评中相较基础模型取得59.2\%的胜率，并在事实一致性与回答完备性等指标上表现更优。
 
 \chinesekeyword{检索增强生成；大语言模型；混合检索；直接偏好优化；医学问答系统}
 \end{chineseabstract}
 
 \begin{englishabstract}
-In recent years, the problem of population aging has been deepening, the scale of people with chronic diseases has been expanding, and the demand for health consultation about chronic diseases has been increasing. However, the traditional offline consultation has some limitations in convenience and timeliness, and it is difficult to meet the daily and continuous health information acquisition needs of users. At the same time, the large language model shows strong ability in the task of natural language understanding and generation, which provides a new technical path for the application of intelligent question answering system in the medical and health field.
+In recent years, with the acceleration of population aging, the number of patients with hypertension, hyperglycemia, and hyperlipidemia (the "three highs") has continued to increase, and the demand for daily consultations on indicator monitoring, medication management, and lifestyle intervention has grown significantly. Traditional offline consultation is limited in convenience and timeliness, making it difficult to support the high-frequency and continuous information needs in this scenario. Meanwhile, large language models (LLMs) have shown strong capabilities in natural language understanding and generation, providing a new technical path for intelligent medical question answering.
 
-However, in high-risk application scenarios such as medicine, the big language model still has some limitations, such as factual errors (hallucinations), insufficient security constraints and insufficient understanding of professional knowledge. Therefore, it is necessary to combine external knowledge and model optimization methods to optimize the model to improve its safety and reliability in medical scenes.
+However, in high-risk scenarios such as medicine, LLMs still have notable limitations, including factual hallucinations, insufficient safety constraints, and inadequate use of domain knowledge. Therefore, it is necessary to combine Retrieval-Augmented Generation (RAG) with model optimization methods to improve safety and reliability in the "three highs" medical QA setting.
 
-In order to solve the above problems, this paper designs and implements a medical question answering system based on retrieval enhancement generation around the consultation scene of "three high" chronic diseases. The system collects relevant information from reliable sources such as national policies, academic journals and medical guides, constructs a medical knowledge base, and combines semantic retrieval and keyword retrieval to accurately match medical documents, thus providing external knowledge support for the large language model. In order to solve the problem of insufficient security constraints of the model, this paper introduces human preference optimization method, and fine-tunes the model through preference data to make its generated content more in line with the safety and normative requirements in medical scenes. On this basis, this paper completed the overall design and implementation of the medical question answering system, and realized the complete question answering process from knowledge construction, retrieval enhancement to model generation.
+To address these issues, this paper designs and implements a RAG-based medical question answering system for consultations on "three highs" chronic diseases. A medical knowledge base is first constructed from reliable sources, including national policies, academic literature, and clinical guidelines. Since this task requires both precise medical term matching and semantic understanding, a single retrieval path is often insufficient. Therefore, a hybrid retrieval strategy that combines keyword retrieval and semantic retrieval is proposed to provide more robust external evidence for answer generation. To further improve response safety and quality, Direct Preference Optimization (DPO) is introduced to align model outputs with medical safety and compliance requirements. Based on these methods, the paper completes the full system design and implementation, covering the entire QA pipeline from knowledge construction and retrieval augmentation to answer generation.
 
-The experimental results show that hybrid retrieval is superior to single-path retrieval in recall coverage, and the recall rate of Recall@5 reaches 89\%. At the same time, compared with the basic model, the optimized model based on DPO achieved a winning rate of 59.2\% in blind evaluation, and the optimized model was superior to the basic model in fact consistency and completeness.
+Experimental results show that the proposed hybrid retrieval outperforms single-path retrieval in recall coverage, achieving 89\% Recall@5. In addition, the DPO-optimized model achieves a 59.2\% win rate over the base model in blind evaluation, and performs better in factual consistency and answer completeness.
 
 \englishkeyword{Retrieval-Augmented Generation; Large Language Model; Hybrid Retrieval; Direct Preference Optimization; Medical Question Answering System}
 \end{englishabstract}

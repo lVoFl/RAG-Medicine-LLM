@@ -486,7 +486,7 @@
   \pagenumbering{Roman} % 设置页码显示为罗马数字
 
   \fancyhf{} % 初始化页码页脚布局
-  \fancyhead[C]{\fontsize{10.5pt}{12.6pt}\selectfont 桂林电子科技大学毕业设计（论文）报告用纸} % 设置页眉
+  \fancyhead[C]{\fontsize{10.5pt}{12.6pt}\selectfont 桂林电子科技大学毕业设计（论文）} % 设置页眉
 }{
   \ifOptionPrintVersion
     {
@@ -521,7 +521,7 @@
 
   \fancyhf{}
 
-  \fancyhead[C]{\fontsize{10.5pt}{12.6pt}\selectfont 桂林电子科技大学毕业设计（论文）报告用纸} % 设置页眉
+  \fancyhead[C]{\fontsize{10.5pt}{12.6pt}\selectfont 桂林电子科技大学毕业设计（论文）} % 设置页眉
 
 
 
@@ -591,7 +591,7 @@
 
 \newcommand{\standardheader}{
   \fancyhf{}
-  \fancyhead[CE,CO]{\fontsize{10.5pt}{12.6pt}\selectfont 桂林电子科技大学毕业设计（论文）报告用纸}
+  \fancyhead[CE,CO]{\fontsize{10.5pt}{12.6pt}\selectfont 桂林电子科技大学毕业设计（论文）}
   \fancyhead[RE,RO]{\fontsize{10.5pt}{12.6pt}\selectfont 第\thepage 页\enspace 共 \pageref {LastPage} 页 }
 }
 
