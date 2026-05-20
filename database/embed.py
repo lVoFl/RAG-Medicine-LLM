@@ -22,11 +22,20 @@ PROCESSED_DIRS = [
 OUTPUT_DIR = Path(__file__).parent / "embeddings"
 BATCH_SIZE = 12
 MAX_LENGTH = 8192
+MODEL_PATH_CANDIDATES = [
+    Path("/model/model_assets/bge-m3"),
+    Path(__file__).resolve().parents[1] / "model_assets" / "bge-m3",
+]
 
 
 def load_model() -> BGEM3FlagModel:
-    print("Loading BAAI/bge-m3 ...")
-    model = BGEM3FlagModel("BAAI/bge-m3", use_fp16=True)
+    model_path = next((p.resolve() for p in MODEL_PATH_CANDIDATES if p.exists()), None)
+    if model_path is None:
+        tried = "\n".join(f"  - {p}" for p in MODEL_PATH_CANDIDATES)
+        raise FileNotFoundError(f"Local bge-m3 model not found. Tried:\n{tried}")
+
+    print(f"Loading model from {model_path} ...")
+    model = BGEM3FlagModel(str(model_path), use_fp16=True)
     print("Model loaded.")
     return model
 

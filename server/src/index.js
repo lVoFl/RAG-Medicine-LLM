@@ -11,6 +11,7 @@ import messagesRouter from "./routes/messages.js";
 import modelRouter from "./routes/model.js";
 import knowledgeRouter from "./routes/knowledge.js";
 import reportsRouter from "./routes/reports.js";
+import asrRouter from "./routes/asr.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 
 const app = express();
@@ -31,6 +32,7 @@ app.use("/api/conversations", messagesRouter);
 app.use("/api/model", modelRouter);
 app.use("/api/knowledge", knowledgeRouter);
 app.use("/api/reports", reportsRouter);
+app.use("/api/asr", asrRouter);
 
 app.use(errorHandler);
 
